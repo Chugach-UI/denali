@@ -7,6 +7,8 @@ use reqwest::blocking::Client;
 use tar::Archive;
 
 pub fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    
     let waylalnd_xml_path = "https://gitlab.freedesktop.org/wayland/wayland/-/blob/9b169ff945a8fdddc3a92b1990bddc29a7d24465/protocol/wayland.xml";
     let wayland_protocols_archive_paths = [
         "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/0091197f5c1b1f2c131f1410e99f9c95d50646be/wayland-protocols-0091197f5c1b1f2c131f1410e99f9c95d50646be.tar.gz?path=stable",
