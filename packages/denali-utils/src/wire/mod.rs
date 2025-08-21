@@ -43,13 +43,57 @@ impl<'a> MessageTraverser<'a> {
     pub fn position(&self) -> u64 {
         self.data.position()
     }
+
+    #[inline]
+    pub fn get_ref(&self) -> &[u8] {
+        self.data.get_ref()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use crate::wire::serde::Array;
 
     use super::MessageTraverser;
+
+    #[bench]
+    fn bench_message_traverser_write(b: &mut test::Bencher) {
+        let mut buffer = [0u8; 64];
+        let mut traverser = MessageTraverser::new(&mut buffer);
+
+        b.iter(|| {
+            traverser
+                .write(&super::serde::MessageHeader {
+                    object_id: 1,
+                    size: 16,
+                    opcode: 3,
+                })
+                .unwrap();
+            traverser.write(&8i32).unwrap();
+            traverser.write(&19u32).unwrap();
+            traverser.write::<Array>(&[4u8; 4].into()).unwrap();
+            traverser
+                .write::<super::serde::String>(&"test".into())
+                .unwrap();
+            traverser.set_position(0);
+        });
+    }
+    #[bench]
+    fn bench_message_traverser_read(b: &mut test::Bencher) {
+        let mut buffer = [1, 0, 0, 0, 16, 0, 3, 0, 8, 0, 0, 0, 19, 0, 0, 0, 4, 0, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0, 116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut traverser = MessageTraverser::new(&mut buffer);
+
+        b.iter(|| {
+            let header: super::serde::MessageHeader = traverser.read().unwrap();
+            let value_i32: i32 = traverser.read().unwrap();
+            let value_u32: u32 = traverser.read().unwrap();
+            let array: Array = traverser.read().unwrap();
+            let string: super::serde::String = traverser.read().unwrap();
+            traverser.set_position(0);
+        });
+    }
 
     #[test]
     fn test_message_traverser() {
