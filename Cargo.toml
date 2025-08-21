@@ -6,3 +6,25 @@ members = [
 
 [workspace.dependencies]
 denali-macro = { path = "packages/denali-macro" }
+
+[workspace.lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+rust_2024_compatibility = { level = "warn", priority = -1 }
+future_incompatible = { level = "warn", priority = -1 }
+let_underscore = { level = "warn", priority = -1 }
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(target_vendor, values("vex"))',
+] }
+
+[workspace.lints.clippy]
+missing_const_for_fn = "warn"
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+missing_panics_doc = "allow"
+cast_possible_wrap = "allow"
+match_bool = "allow"

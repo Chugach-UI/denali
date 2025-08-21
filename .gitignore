@@ -1,2 +1,8 @@
+# Rust + Cargo
+
 target/
 Cargo.lock
+
+# Nix + Direnv
+
+.direnv/

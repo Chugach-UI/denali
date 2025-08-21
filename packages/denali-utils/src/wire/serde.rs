@@ -118,16 +118,12 @@ pub struct Array<'a> {
 }
 impl From<Vec<u8>> for Array<'_> {
     fn from(value: Vec<u8>) -> Self {
-        Self {
-            data: value.into(),
-        }
+        Self { data: value.into() }
     }
 }
 impl<'a> From<&'a [u8]> for Array<'a> {
     fn from(value: &'a [u8]) -> Self {
-        Self {
-            data: value.into(),
-        }
+        Self { data: value.into() }
     }
 }
 impl<const N: usize> From<[u8; N]> for Array<'_> {
@@ -193,16 +189,12 @@ impl<'a> String<'a> {
 }
 impl From<std::string::String> for String<'_> {
     fn from(value: std::string::String) -> Self {
-        Self {
-            data: value.into(),
-        }
+        Self { data: value.into() }
     }
 }
 impl<'a> From<&'a str> for String<'a> {
     fn from(value: &'a str) -> Self {
-        Self {
-            data: value.into(),
-        }
+        Self { data: value.into() }
     }
 }
 impl<'a> From<Cow<'a, str>> for String<'a> {
