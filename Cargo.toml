@@ -3,3 +3,6 @@ resolver = "3"
 members = [
     "packages/*"
 ]
+
+[workspace.dependencies]
+denali-macro = { path = "packages/denali-macro" }

@@ -1,29 +1,9 @@
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Fixed(i32);
 
 impl std::fmt::Display for Fixed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", Into::<f64>::into(*self))
-    }
-}
-
-impl PartialEq for Fixed {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl Eq for Fixed {}
-
-impl PartialOrd for Fixed {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl Ord for Fixed {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
     }
 }
 
@@ -34,7 +14,6 @@ impl std::ops::Add for Fixed {
         Fixed(self.0 + rhs.0)
     }
 }
-
 impl std::ops::AddAssign for Fixed {
     fn add_assign(&mut self, rhs: Self) {
         *self = *self + rhs;
@@ -48,7 +27,6 @@ impl std::ops::Sub for Fixed {
         Fixed(self.0 - rhs.0)
     }
 }
-
 impl std::ops::SubAssign for Fixed {
     fn sub_assign(&mut self, rhs: Self) {
         *self = *self - rhs;
@@ -62,7 +40,6 @@ impl std::ops::Mul for Fixed {
         Fixed(((self.0 as i64 * rhs.0 as i64) >> 8) as i32)
     }
 }
-
 impl std::ops::MulAssign for Fixed {
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
@@ -76,7 +53,6 @@ impl std::ops::Div for Fixed {
         Fixed((((self.0 as i64) << 8) / rhs.0 as i64) as i32)
     }
 }
-
 impl std::ops::DivAssign for Fixed {
     fn div_assign(&mut self, rhs: Self) {
         *self = *self / rhs;
@@ -91,21 +67,9 @@ impl std::ops::Neg for Fixed {
     }
 }
 
-impl From<f16> for Fixed {
-    fn from(value: f16) -> Self {
-        Fixed((value * 256.0).round() as i32)
-    }
-}
-
-impl From<Fixed> for f16 {
-    fn from(value: Fixed) -> Self {
-        value.0 as f16 / 256.0
-    }
-}
-
-impl From<f32> for Fixed {
-    fn from(value: f32) -> Self {
-        Fixed((value * 256.0).round() as i32)
+impl<T: num_traits::AsPrimitive<f64>> From<T> for Fixed {
+    fn from(value: T) -> Self {
+        Fixed((value.as_() * 256.0).round() as i32)
     }
 }
 
@@ -115,33 +79,9 @@ impl From<Fixed> for f32 {
     }
 }
 
-impl From<f64> for Fixed {
-    fn from(value: f64) -> Self {
-        Fixed((value * 256.0).round() as i32)
-    }
-}
-
 impl From<Fixed> for f64 {
     fn from(value: Fixed) -> Self {
         value.0 as f64 / 256.0
-    }
-}
-
-impl From<f128> for Fixed {
-    fn from(value: f128) -> Self {
-        Fixed((value * 256.0).round() as i32)
-    }
-}
-
-impl From<Fixed> for f128 {
-    fn from(value: Fixed) -> Self {
-        value.0 as f128 / 256.0
-    }
-}
-
-impl From<i8> for Fixed {
-    fn from(value: i8) -> Self {
-        Fixed((value as i32) << 8)
     }
 }
 
@@ -151,21 +91,9 @@ impl From<Fixed> for i8 {
     }
 }
 
-impl From<i16> for Fixed {
-    fn from(value: i16) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
 impl From<Fixed> for i16 {
     fn from(value: Fixed) -> Self {
         (value.0 / 256) as i16
-    }
-}
-
-impl From<i32> for Fixed {
-    fn from(value: i32) -> Self {
-        Fixed(value << 8)
     }
 }
 
@@ -175,21 +103,9 @@ impl From<Fixed> for i32 {
     }
 }
 
-impl From<i64> for Fixed {
-    fn from(value: i64) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
 impl From<Fixed> for i64 {
     fn from(value: Fixed) -> Self {
         (value.0 / 256) as i64
-    }
-}
-
-impl From<i128> for Fixed {
-    fn from(value: i128) -> Self {
-        Fixed((value as i32) << 8)
     }
 }
 
@@ -199,21 +115,9 @@ impl From<Fixed> for i128 {
     }
 }
 
-impl From<isize> for Fixed {
-    fn from(value: isize) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
 impl From<Fixed> for isize {
     fn from(value: Fixed) -> Self {
         (value.0 / 256) as isize
-    }
-}
-
-impl From<u8> for Fixed {
-    fn from(value: u8) -> Self {
-        Fixed((value as i32) << 8)
     }
 }
 
@@ -223,21 +127,9 @@ impl From<Fixed> for u8 {
     }
 }
 
-impl From<u16> for Fixed {
-    fn from(value: u16) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
 impl From<Fixed> for u16 {
     fn from(value: Fixed) -> Self {
         (value.0 >> 8) as u16
-    }
-}
-
-impl From<u32> for Fixed {
-    fn from(value: u32) -> Self {
-        Fixed((value as i32) << 8)
     }
 }
 
@@ -247,33 +139,9 @@ impl From<Fixed> for u32 {
     }
 }
 
-impl From<u64> for Fixed {
-    fn from(value: u64) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
-impl From<Fixed> for u64 {
-    fn from(value: Fixed) -> Self {
-        (value.0 >> 8) as u64
-    }
-}
-
-impl From<u128> for Fixed {
-    fn from(value: u128) -> Self {
-        Fixed((value as i32) << 8)
-    }
-}
-
 impl From<Fixed> for u128 {
     fn from(value: Fixed) -> Self {
         (value.0 >> 8) as u128
-    }
-}
-
-impl From<usize> for Fixed {
-    fn from(value: usize) -> Self {
-        Fixed((value as i32) << 8)
     }
 }
 
