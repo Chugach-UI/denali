@@ -7,5 +7,9 @@ name = "denali-macro"
 version = "0.1.0"
 
 [[package]]
+name = "denali-utils"
+version = "0.1.0"
+
+[[package]]
 name = "denali-wayland"
 version = "0.1.0"
