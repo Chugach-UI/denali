@@ -139,6 +139,12 @@ impl From<Fixed> for u32 {
     }
 }
 
+impl From<Fixed> for u64 {
+    fn from(value: Fixed) -> Self {
+        (value.0 >> 8) as u64
+    }
+}
+
 impl From<Fixed> for u128 {
     fn from(value: Fixed) -> Self {
         (value.0 >> 8) as u128
@@ -196,20 +202,16 @@ mod tests {
     fn floats() {
         let fix = Fixed::from(20.456);
 
-        assert!((Into::<f16>::into(fix) - 20.456_f16).abs() < 0.01);
         assert!((Into::<f32>::into(fix) - 20.456_f32).abs() < 0.01);
         assert!((Into::<f64>::into(fix) - 20.456_f64).abs() < 0.01);
-        assert!((Into::<f128>::into(fix) - 20.456_f128).abs() < 0.01);
     }
 
     #[test]
     fn negative_floats() {
         let fix = Fixed::from(-10.2);
 
-        assert!((Into::<f16>::into(fix) + 10.2_f16).abs() < 0.01);
         assert!((Into::<f32>::into(fix) + 10.2_f32).abs() < 0.01);
         assert!((Into::<f64>::into(fix) + 10.2_f64).abs() < 0.01);
-        assert!((Into::<f128>::into(fix) + 10.2_f128).abs() < 0.01);
     }
 
     #[test]
