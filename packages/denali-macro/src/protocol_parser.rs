@@ -34,7 +34,7 @@ pub struct Interface {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum Element {
+pub enum Element {
     Request(Request),
     Event(Event),
     Enum(Enum),
@@ -115,7 +115,7 @@ pub struct Arg {
     pub description: Option<Description>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone)]
 pub struct Description {
     #[serde(rename = "@summary")]
     pub summary: String,

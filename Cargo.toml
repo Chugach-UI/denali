@@ -6,6 +6,7 @@ members = [
 
 [workspace.dependencies]
 denali-macro = { path = "packages/denali-macro" }
+denali-utils = { path = "packages/denali-utils" }
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

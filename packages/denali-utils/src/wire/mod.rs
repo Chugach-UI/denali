@@ -6,10 +6,45 @@ fn round_up_4(pos: u64) -> u64 {
     (pos + 3) & !3
 }
 
-pub struct MessageTraverser<'a> {
+pub struct MessageDecoder<'a> {
+    data: Cursor<&'a [u8]>,
+}
+impl<'a> MessageDecoder<'a> {
+    pub fn new(data: &'a [u8]) -> Self {
+        Self {
+            data: Cursor::new(data),
+        }
+    }
+
+    pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
+        let pos = self.position();
+        let data = &self.data.get_ref()[pos as usize..];
+
+        let result = T::decode(data)?;
+        self.data
+            .set_position(round_up_4(self.data.position() + result.size() as u64));
+        Ok(result)
+    }
+
+    #[inline]
+    pub fn set_position(&mut self, pos: u64) {
+        self.data.set_position(pos);
+    }
+    #[inline]
+    pub fn position(&self) -> u64 {
+        self.data.position()
+    }
+
+    #[inline]
+    pub fn get_ref(&self) -> &[u8] {
+        self.data.get_ref()
+    }
+}
+
+pub struct MessageEncoder<'a> {
     data: Cursor<&'a mut [u8]>,
 }
-impl<'a> MessageTraverser<'a> {
+impl<'a> MessageEncoder<'a> {
     pub fn new(data: &'a mut [u8]) -> Self {
         Self {
             data: Cursor::new(data),
@@ -56,12 +91,12 @@ mod tests {
 
     use crate::wire::serde::Array;
 
-    use super::MessageTraverser;
+    use super::MessageEncoder;
 
     #[bench]
     fn bench_message_traverser_write(b: &mut test::Bencher) {
         let mut buffer = [0u8; 64];
-        let mut traverser = MessageTraverser::new(&mut buffer);
+        let mut traverser = MessageEncoder::new(&mut buffer);
 
         b.iter(|| {
             traverser
@@ -87,7 +122,7 @@ mod tests {
             116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let mut traverser = MessageTraverser::new(&mut buffer);
+        let mut traverser = MessageEncoder::new(&mut buffer);
 
         b.iter(|| {
             let header: super::serde::MessageHeader = traverser.read().unwrap();
@@ -102,7 +137,7 @@ mod tests {
     #[test]
     fn test_message_traverser() {
         let mut buffer = [0u8; 64];
-        let mut traverser = MessageTraverser::new(&mut buffer);
+        let mut traverser = MessageEncoder::new(&mut buffer);
 
         // test encoding
         traverser

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 denali-macro = { workspace = true }
+denali-utils = { workspace = true }
 
 [build-dependencies]
 flate2 = "1.1.2"

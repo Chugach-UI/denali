@@ -1,9 +1,12 @@
 mod protocol_parser;
+mod wire;
+mod helper;
 
 use std::{ffi::OsString, fs::File, path::PathBuf};
 
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use walkdir::WalkDir;
 
 #[proc_macro]
@@ -29,17 +32,35 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
         path.into()
     };
 
-    let files = collect_files(&path)?;
+    let protocols = collect_files(&path)?.into_iter().map(|file| 
+        protocol_parser::parse_protocol(file)
+            .map_err(|_| "Failed to parse Wayland protocol file")
+    ).filter_map(Result::ok);
 
-    let mut message = String::new();
-    for file in files {
-        let protocol = protocol_parser::parse_protocol(file)
-            .map_err(|_| "Failed to parse Wayland protocol file")?;
-        message.push_str(format!("Parsed protocol: {}\n", protocol.name).as_str());
-    }
+    let modules = protocols.map(|protocol| {
+        let mod_name = format_ident!("{}", protocol.name.to_case(Case::Snake));
+        let desc = helper::description_to_docstring(&protocol.description);
+
+        let events = protocol.interfaces.iter().flat_map(|interface| {
+            interface.elements.iter().filter_map(|element| {
+                if let protocol_parser::Element::Event(event) = element {
+                    Some(wire::build_event(event))
+                } else {
+                    None
+                }
+            })
+        });
+
+        quote! {
+            #desc
+            pub mod #mod_name {
+                #(#events)*
+            }
+        }
+    });
 
     Ok(quote! {
-        compile_error!(#message);
+        #(#modules)*
     }
     .into())
 }
