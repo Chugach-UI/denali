@@ -1,6 +1,6 @@
 mod protocol_parser;
 mod wire;
-mod helper;
+mod helpers;
 
 use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
 
@@ -42,11 +42,11 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
 
     let modules = protocols.into_iter().map(|protocol| {
         let mod_name = format_ident!("{}", protocol.name.to_case(Case::Snake));
-        let desc = helper::description_to_docstring(&protocol.description);
+        let desc = helpers::description_to_docstring(&protocol.description);
 
         let interfaces = protocol.interfaces.iter().map(|interface| {
             let interface_name = format_ident!("{}", interface.name.to_case(Case::Snake));
-            let interface_desc = helper::description_to_docstring(&interface.description);
+            let interface_desc = helpers::description_to_docstring(&interface.description);
             let interface_version = interface.version;
 
             let events = interface.elements.iter().filter_map(|element| {
