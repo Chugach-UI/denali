@@ -1,5 +1,6 @@
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Fixed(i32);
+#[repr(transparent)]
+pub struct Fixed(pub(crate) i32);
 
 impl std::fmt::Display for Fixed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

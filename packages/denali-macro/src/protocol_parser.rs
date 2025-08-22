@@ -26,7 +26,7 @@ pub struct Interface {
     #[serde(rename = "@name")]
     pub name: String,
     #[serde(rename = "@version")]
-    pub version: String,
+    pub version: u32,
     pub description: Option<Description>,
     #[serde(rename = "$value")]
     pub elements: Vec<Element>,
@@ -77,7 +77,7 @@ pub struct Enum {
     #[serde(rename = "@since")]
     pub since: Option<String>,
     #[serde(rename = "@bitfield")]
-    pub bitfield: Option<String>,
+    pub bitfield: Option<bool>,
     pub description: Option<Description>,
     #[serde(default, rename = "entry")]
     pub entries: Vec<Entry>,

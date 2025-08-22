@@ -2,10 +2,11 @@ mod protocol_parser;
 mod wire;
 mod helper;
 
-use std::{ffi::OsString, fs::File, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
 
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
+use protocol_parser::Protocol;
 use quote::{format_ident, quote};
 use walkdir::WalkDir;
 
@@ -35,26 +36,40 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
     let protocols = collect_files(&path)?.into_iter().map(|file| 
         protocol_parser::parse_protocol(file)
             .map_err(|_| "Failed to parse Wayland protocol file")
-    ).filter_map(Result::ok);
+    ).filter_map(Result::ok).collect::<Vec<_>>();
 
-    let modules = protocols.map(|protocol| {
+    let interface_map = build_interface_map(&protocols);
+
+    let modules = protocols.into_iter().map(|protocol| {
         let mod_name = format_ident!("{}", protocol.name.to_case(Case::Snake));
         let desc = helper::description_to_docstring(&protocol.description);
 
-        let events = protocol.interfaces.iter().flat_map(|interface| {
-            interface.elements.iter().filter_map(|element| {
-                if let protocol_parser::Element::Event(event) = element {
-                    Some(wire::build_event(event))
-                } else {
-                    None
+        let interfaces = protocol.interfaces.iter().map(|interface| {
+            let interface_name = format_ident!("{}", interface.name.to_case(Case::Snake));
+            let interface_desc = helper::description_to_docstring(&interface.description);
+            let interface_version = interface.version;
+
+            let events = interface.elements.iter().filter_map(|element| {
+                match element {
+                    protocol_parser::Element::Event(event) => Some(wire::build_event(event, &interface_map)),
+                    protocol_parser::Element::Enum(enum_) => Some(wire::build_enum(enum_)),
+                    _ => None
                 }
-            })
+            });
+
+            quote! {
+                #interface_desc
+                pub mod #interface_name {
+                    pub const VERSION: u32 = #interface_version;
+                    #(#events)*
+                }
+            }
         });
 
         quote! {
             #desc
             pub mod #mod_name {
-                #(#events)*
+                #(#interfaces)*
             }
         }
     });
@@ -68,7 +83,7 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
 fn collect_files(path: &PathBuf) -> Result<Vec<File>, String> {
     let mut files = Vec::<File>::new();
     if path.is_file() {
-        let file = File::open(&path).map_err(|_| "Failed to read Wayland protocol file: {}")?;
+        let file = File::open(path).map_err(|_| "Failed to read Wayland protocol file: {}")?;
         files.push(file);
     } else if path.is_dir() {
         for path in WalkDir::new(path)
@@ -85,4 +100,17 @@ fn collect_files(path: &PathBuf) -> Result<Vec<File>, String> {
     }
 
     Ok(files)
+}
+
+/// Builds a map of interface to its protocol
+fn build_interface_map(protocols: &[Protocol]) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+
+    for protocol in protocols {
+        for interface in protocol.interfaces.iter() {
+            map.insert(interface.name.clone(), protocol.name.clone());
+        }
+    }
+
+    map
 }

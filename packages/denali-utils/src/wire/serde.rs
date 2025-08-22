@@ -7,6 +7,8 @@ use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use paste::paste;
 use thiserror::Error;
 
+use crate::fixed::Fixed;
+
 pub trait CompileTimeMessageSize: MessageSize {
     const SIZE: usize = size_of::<Self>();
 }
@@ -16,6 +18,7 @@ pub trait MessageSize: Sized {
     }
 }
 
+#[macro_export]
 macro_rules! ensure_size {
     ($data:expr, $t:ident) => {
         if $data.len() < $t::SIZE {
@@ -23,6 +26,8 @@ macro_rules! ensure_size {
         }
     };
 }
+pub use crate::ensure_size;
+
 macro_rules! impl_serde {
     {
         #[$($attr:meta),*]
@@ -112,6 +117,38 @@ impl_serde! {
     }
 }
 impl_serde!(u32, i32);
+
+impl MessageSize for () {}
+impl CompileTimeMessageSize for () {}
+impl Decode for () {
+    fn decode(_data: &[u8]) -> Result<Self, SerdeError> {
+        Ok(())
+    }
+}
+impl Encode for () {
+    fn encode(&self, _data: &mut [u8]) -> Result<usize, SerdeError> {
+        Ok(0)
+    }
+}
+
+impl MessageSize for Fixed {}
+impl CompileTimeMessageSize for Fixed {}
+impl Decode for Fixed {
+    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+        ensure_size!(data, Fixed);
+        let mut cursor = Cursor::new(data);
+        let value = cursor.read_i32::<LE>()?;
+        Ok(Fixed(value))
+    }
+}
+impl Encode for Fixed {
+    fn encode(&self, data: &mut [u8]) -> Result<usize, SerdeError> {
+        ensure_size!(data, Fixed);
+        let mut cursor = Cursor::new(data);
+        cursor.write_i32::<LE>(self.0)?;
+        Ok(Fixed::SIZE)
+    }
+}
 
 pub struct Array<'a> {
     pub data: Cow<'a, [u8]>,
@@ -259,4 +296,6 @@ pub enum SerdeError {
     InvalidSize,
     #[error("IO error occurred while decoding")]
     IoError(#[from] std::io::Error),
+    #[error("Invalid enum value")]
+    InvalidEnumValue
 }
