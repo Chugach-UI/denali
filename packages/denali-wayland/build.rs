@@ -6,17 +6,30 @@ use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use tar::Archive;
 
+const WL_LOCKS: &str = include_str!("./wayland.lock");
+
 pub fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let waylalnd_xml_path = "https://gitlab.freedesktop.org/wayland/wayland/-/blob/9b169ff945a8fdddc3a92b1990bddc29a7d24465/protocol/wayland.xml";
-    let wayland_protocols_archive_paths = [
-        "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/0091197f5c1b1f2c131f1410e99f9c95d50646be/wayland-protocols-0091197f5c1b1f2c131f1410e99f9c95d50646be.tar.gz?path=stable",
-        "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/0091197f5c1b1f2c131f1410e99f9c95d50646be/wayland-protocols-0091197f5c1b1f2c131f1410e99f9c95d50646be.tar.gz?path=staging",
-        "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/0091197f5c1b1f2c131f1410e99f9c95d50646be/wayland-protocols-0091197f5c1b1f2c131f1410e99f9c95d50646be.tar.gz?path=unstable",
-        "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/0091197f5c1b1f2c131f1410e99f9c95d50646be/wayland-protocols-0091197f5c1b1f2c131f1410e99f9c95d50646be.tar.gz?path=experimental",
-    ];
-    let blacklist = [
+    let lock_lines: Vec<&str> = WL_LOCKS.lines().collect();
+    let wayland_commit = lock_lines[0].replace("wayland=", "");
+    let wayland_protocols_commit = lock_lines[1].replace("wayland-protocols=", "");
+
+    let wayland_xml_path = format!(
+        "https://gitlab.freedesktop.org/wayland/wayland/-/blob/{}/protocol/wayland.xml",
+        wayland_commit
+    );
+    let wayland_protocols_archive_paths: Vec<String> = ["stable", "staging", "unstable", "experimental"]
+        .iter()
+        .map(|path| {
+            format!(
+                "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/{commit}/wayland-protocols-{commit}.tar.gz?path={path}",
+                commit = wayland_protocols_commit
+            )
+        })
+        .collect();
+
+    let protocol_blacklist = [
         "linux-dmabuf-unstable-v1.xml",
         "tablet-unstable-v1.xml",
         "tablet-unstable-v2.xml",
@@ -33,7 +46,7 @@ pub fn main() {
     let client = Client::new();
 
     let wayland_xml_bytes = client
-        .get(waylalnd_xml_path)
+        .get(wayland_xml_path)
         .send()
         .unwrap()
         .bytes()
@@ -53,7 +66,7 @@ pub fn main() {
             if let Some(ext) = path.extension()
                 && let Some(name) = path.file_name()
                 && ext == "xml"
-                && !blacklist.contains(&name.to_string_lossy().into_owned().as_str())
+                && !protocol_blacklist.contains(&name.to_string_lossy().into_owned().as_str())
             {
                 unwrapped.unpack(protocols_path.join(name)).unwrap();
             }

@@ -1,23 +1,21 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
 
 use serde::Deserialize;
 
-pub fn parse_protocol(path: &Path) -> Protocol {
-    let file = File::open(path).unwrap();
-    let reader = BufReader::new(file);
-    quick_xml::de::from_reader::<_, Protocol>(reader).unwrap()
+pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
+    let reader = BufReader::new(protocol);
+    quick_xml::de::from_reader::<_, Protocol>(reader)
 }
 
 #[derive(Deserialize)]
 pub struct Protocol {
     #[serde(rename = "@name")]
-    name: String,
-    copyright: Option<Copyright>,
-    description: Option<Description>,
+    pub name: String,
+    pub copyright: Option<Copyright>,
+    pub description: Option<Description>,
     #[serde(default, rename = "interface")]
-    interfaces: Vec<Interface>,
+    pub interfaces: Vec<Interface>,
 }
 
 #[derive(Deserialize)]
@@ -26,12 +24,12 @@ pub struct Copyright(String);
 #[derive(Deserialize)]
 pub struct Interface {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@version")]
-    version: String,
-    description: Option<Description>,
+    pub version: String,
+    pub description: Option<Description>,
     #[serde(rename = "$value")]
-    elements: Vec<Element>,
+    pub elements: Vec<Element>,
 }
 
 #[derive(Deserialize)]
@@ -45,82 +43,82 @@ enum Element {
 #[derive(Deserialize)]
 pub struct Request {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@type")]
-    r#type: Option<String>,
+    pub type_: Option<String>,
     #[serde(rename = "@since")]
-    since: Option<String>,
+    pub since: Option<String>,
     #[serde(rename = "@deprecated-since")]
-    deprecated_since: Option<String>,
-    description: Option<Description>,
+    pub deprecated_since: Option<String>,
+    pub description: Option<Description>,
     #[serde(default, rename = "arg")]
-    args: Vec<Arg>,
+    pub args: Vec<Arg>,
 }
 
 #[derive(Deserialize)]
 pub struct Event {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@type")]
-    r#type: Option<String>,
+    pub type_: Option<String>,
     #[serde(rename = "@since")]
-    since: Option<String>,
+    pub since: Option<String>,
     #[serde(rename = "@deprecated-since")]
-    deprecated_since: Option<String>,
-    description: Option<Description>,
+    pub deprecated_since: Option<String>,
+    pub description: Option<Description>,
     #[serde(default, rename = "arg")]
-    args: Vec<Arg>,
+    pub args: Vec<Arg>,
 }
 
 #[derive(Deserialize)]
 pub struct Enum {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@since")]
-    since: Option<String>,
+    pub since: Option<String>,
     #[serde(rename = "@bitfield")]
-    bitfield: Option<String>,
-    description: Option<Description>,
+    pub bitfield: Option<String>,
+    pub description: Option<Description>,
     #[serde(default, rename = "entry")]
-    entries: Vec<Entry>,
+    pub entries: Vec<Entry>,
 }
 
 #[derive(Deserialize)]
 pub struct Entry {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@value")]
-    value: String,
+    pub value: String,
     #[serde(rename = "@summary")]
-    summary: Option<String>,
+    pub summary: Option<String>,
     #[serde(rename = "@since")]
-    since: Option<String>,
+    pub since: Option<String>,
     #[serde(rename = "@deprecated-since")]
-    deprecated_since: Option<String>,
-    description: Option<Description>,
+    pub deprecated_since: Option<String>,
+    pub description: Option<Description>,
 }
 
 #[derive(Deserialize)]
 pub struct Arg {
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@type")]
-    r#type: String,
+    pub type_: String,
     #[serde(rename = "@summary")]
-    summary: Option<String>,
+    pub summary: Option<String>,
     #[serde(rename = "@interface")]
-    interface: Option<String>,
+    pub interface: Option<String>,
     #[serde(rename = "@allow-null")]
-    allow_null: Option<String>,
+    pub allow_null: Option<String>,
     #[serde(rename = "@enum")]
-    r#enum: Option<String>,
-    description: Option<Description>,
+    pub enum_: Option<String>,
+    pub description: Option<Description>,
 }
 
 #[derive(Deserialize)]
 pub struct Description {
     #[serde(rename = "@summary")]
-    summary: String,
+    pub summary: String,
     #[serde(rename = "$text")]
-    content: Option<String>,
+    pub content: Option<String>,
 }
