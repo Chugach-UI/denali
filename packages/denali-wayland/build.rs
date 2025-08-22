@@ -16,7 +16,7 @@ pub fn main() {
     let wayland_protocols_commit = lock_lines[1].replace("wayland-protocols=", "");
 
     let wayland_xml_path = format!(
-        "https://gitlab.freedesktop.org/wayland/wayland/-/blob/{}/protocol/wayland.xml",
+        "https://gitlab.freedesktop.org/wayland/wayland/-/raw/{}/protocol/wayland.xml",
         wayland_commit
     );
     let wayland_protocols_archive_paths: Vec<String> = ["stable", "staging", "unstable", "experimental"]
