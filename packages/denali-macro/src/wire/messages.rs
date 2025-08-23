@@ -4,15 +4,81 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{helpers::{arg_type_to_rust_type, description_to_docstring}, protocol_parser::Event};
-
+use crate::{
+    helpers::{arg_type_to_rust_type, build_documentation},
+    protocol_parser::{Arg, Description, Event, Request},
+};
 
 pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> TokenStream {
-    let name = format_ident!("{}Event", event.name.to_case(Case::Pascal));
-    let description = description_to_docstring(&event.description);
+    let message = Message::Event(event);
+    build_message(&message, interface_map)
+}
+pub fn build_request(request: &Request, interface_map: &BTreeMap<String, String>) -> TokenStream {
+    let message = Message::Request(request);
+    build_message(&message, interface_map)
+}
+
+enum Message<'a> {
+    Event(&'a Event),
+    Request(&'a Request),
+}
+impl Message<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Message::Event(event) => &event.name,
+            Message::Request(request) => &request.name,
+        }
+    }
+
+    fn description(&self) -> &Option<Description> {
+        match self {
+            Message::Event(event) => &event.description,
+            Message::Request(request) => &request.description,
+        }
+    }
+
+    fn since(&self) -> &Option<String> {
+        match self {
+            Message::Event(event) => &event.since,
+            Message::Request(request) => &request.since,
+        }
+    }
+
+    fn deprecated_since(&self) -> &Option<String> {
+        match self {
+            Message::Event(event) => &event.deprecated_since,
+            Message::Request(request) => &request.deprecated_since,
+        }
+    }
+
+    fn args(&self) -> &[Arg] {
+        match self {
+            Message::Event(event) => &event.args,
+            Message::Request(request) => &request.args,
+        }
+    }
+
+    fn is_request(&self) -> bool {
+        matches!(self, Message::Request(_))
+    }
+}
+
+fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> TokenStream {
+    let suffix = if event.is_request() {
+        "Request"
+    } else {
+        "Event"
+    };
+    let name = format_ident!("{}{suffix}", event.name().to_case(Case::Pascal));
+    let docs = build_documentation(
+        event.description(),
+        &None,
+        event.since(),
+        event.deprecated_since(),
+    );
 
     let arg_names = event
-        .args
+        .args()
         .iter()
         .map(|arg| {
             let arg_name = arg.name.to_case(Case::Snake);
@@ -21,10 +87,11 @@ pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> T
         .collect::<Vec<_>>();
 
     let struct_members = event
-        .args
+        .args()
         .iter()
         .map(|arg| {
             let arg_name = format_ident!("{}", arg.name.to_case(Case::Snake));
+            let arg_docs = build_documentation(&arg.description, &arg.summary, &None, &None);
             let arg_type = arg
                 .enum_
                 .as_ref()
@@ -50,13 +117,14 @@ pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> T
                 })
                 .unwrap_or_else(|| arg_type_to_rust_type(&arg.type_, Some("'a")));
             quote! {
-                #arg_name: #arg_type,
+                #arg_docs
+                pub #arg_name: #arg_type,
             }
         })
         .collect::<Vec<_>>();
 
     let lifetime = event
-        .args
+        .args()
         .iter()
         .find(|arg| arg.type_ == "string" || arg.type_ == "array")
         .map(|_| quote! { 'a })
@@ -64,7 +132,7 @@ pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> T
         .collect::<Vec<_>>();
 
     let args_with_size = event
-        .args
+        .args()
         .iter()
         .filter(|arg| arg.type_ != "fd")
         .collect::<Vec<_>>();
@@ -93,9 +161,9 @@ pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> T
     };
 
     quote! {
-        #description
+        #docs
         pub struct #name #(<#lifetime>)* {
-            #(pub #struct_members)*
+            #(#struct_members)*
         }
         impl #(<#lifetime>)* denali_utils::wire::serde::MessageSize for #name #(<#lifetime>)* {
             fn size(&self) -> usize {

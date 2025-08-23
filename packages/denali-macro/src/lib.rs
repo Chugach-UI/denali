@@ -42,18 +42,18 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
 
     let modules = protocols.into_iter().map(|protocol| {
         let mod_name = format_ident!("{}", protocol.name.to_case(Case::Snake));
-        let desc = helpers::description_to_docstring(&protocol.description);
+        let desc = helpers::build_documentation(&protocol.description, &None, &None, &None);
 
         let interfaces = protocol.interfaces.iter().map(|interface| {
             let interface_name = format_ident!("{}", interface.name.to_case(Case::Snake));
-            let interface_desc = helpers::description_to_docstring(&interface.description);
+            let interface_desc = helpers::build_documentation(&interface.description, &None, &None, &None);
             let interface_version = interface.version;
 
-            let events = interface.elements.iter().filter_map(|element| {
+            let events = interface.elements.iter().map(|element| {
                 match element {
                     protocol_parser::Element::Event(event) => Some(wire::build_event(event, &interface_map)),
+                    protocol_parser::Element::Request(request) => Some(wire::build_request(request, &interface_map)),
                     protocol_parser::Element::Enum(enum_) => Some(wire::build_enum(enum_)),
-                    _ => None
                 }
             });
 

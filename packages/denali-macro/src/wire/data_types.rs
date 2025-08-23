@@ -2,8 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{helpers::description_to_docstring, protocol_parser::Enum};
-
+use crate::{helpers::build_documentation, protocol_parser::Enum};
 
 pub fn build_enum(enum_: &Enum) -> TokenStream {
     #[derive(PartialEq, Eq)]
@@ -14,7 +13,7 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
 
     let bitfield = enum_.bitfield.unwrap_or(false);
     let name = format_ident!("{}", enum_.name.to_case(Case::Pascal));
-    let description = description_to_docstring(&enum_.description);
+    let description = build_documentation(&enum_.description, &None, &enum_.since, &None);
 
     let inner_type = if bitfield {
         EnumInnerType::U32
@@ -82,7 +81,7 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         .iter()
         .zip(variant_names.iter().zip(variant_values.iter()))
         .map(|(entry, (name, value))| {
-            let desc = description_to_docstring(&entry.description);
+            let desc = build_documentation(&entry.description, &entry.summary, &entry.since, &entry.deprecated_since);
 
             if bitfield {
                 quote! {
