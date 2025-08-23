@@ -4,8 +4,14 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::{build_ident, helpers::build_documentation, protocol_parser::{Element, Interface}, wire::{build_enum, build_event, build_request}};
+use crate::{build_ident, helpers::build_documentation, protocol_parser::{Element, Interface, Request}, wire::{build_enum, build_event, build_request}};
 
+pub fn build_request_method(request: &Request) -> TokenStream {
+    
+    todo!()
+}
+
+//TODO: DO SERVER SIDE CODEGEN AS WELL
 pub fn build_interface(interface: &Interface) -> TokenStream {
     let documentation = build_documentation(&interface.description, &None, &None, &None);
     let interface_str = interface.name.to_case(Case::Snake);
@@ -15,6 +21,13 @@ pub fn build_interface(interface: &Interface) -> TokenStream {
     quote! {
         #documentation
         pub struct #name(denali_utils::proxy::Proxy);
+        impl From<denali_utils::proxy::Proxy> for #name {
+            fn from(proxy: denali_utils::proxy::Proxy) -> Self {
+                Self(proxy)
+            }
+        }
+
+        impl denali_utils::Object for #name {}
         impl denali_utils::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 

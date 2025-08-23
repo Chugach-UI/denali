@@ -108,11 +108,11 @@ impl Proxy {
         })
     }
 
-    pub fn create_object<T: super::Interface + From<Self>>(
+    pub fn create_object<T: super::Interface>(
         &self,
         version: u32,
     ) -> Result<T, ProxyError> {
-        Self::new(version, self.id_manager.clone()).map(From::<Self>::from)
+        Self::new(version, self.id_manager.clone()).map(From::from)
     }
 }
 
