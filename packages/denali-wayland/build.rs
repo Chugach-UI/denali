@@ -72,4 +72,15 @@ pub fn main() {
             }
         }
     }
+
+    let generated_code_path = Path::new(&out_dir).join("wayland_client_protocols.rs");
+
+    fs::write(
+        generated_code_path,
+        format!(
+            "denali_macro::wayland_protocols!(\"{}\")",
+            protocols_path.to_string_lossy()
+        ),
+    )
+    .unwrap();
 }

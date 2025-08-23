@@ -10,7 +10,7 @@ const CLIENT_MIN_ID: u32 = 0x00000001;
 const CLIENT_MAX_ID: u32 = 0xfeffffff;
 
 #[derive(Debug, Clone)]
-pub struct IdManagerInner {
+struct IdManagerInner {
     next: u32,
     free_list: BinaryHeap<Reverse<u32>>,
 }
