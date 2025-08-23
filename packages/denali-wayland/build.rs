@@ -78,7 +78,7 @@ pub fn main() {
     fs::write(
         generated_code_path,
         format!(
-            "denali_macro::wayland_protocols!(\"{}\")",
+            "denali_macro::wayland_protocols!(\"{}\");",
             protocols_path.to_string_lossy()
         ),
     )
