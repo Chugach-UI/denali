@@ -68,7 +68,9 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
 
         quote! {
             #desc
+            #[allow(deprecated)]
             pub mod #mod_name {
+
                 #(#interfaces)*
             }
         }
