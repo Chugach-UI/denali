@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use convert_case::{Case, Casing};
+use convert_case::{Boundary, Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -104,9 +104,19 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
                         let protocol = interface_map.get(enum_parts[0]).unwrap_or_else(|| {
                             panic!("Protocol '{}' not found in interface map", enum_parts[0])
                         });
-                        let protocol = format_ident!("{}", protocol.to_case(Case::Snake));
+                        let protocol = format_ident!(
+                            "{}",
+                            protocol
+                                .without_boundaries(&[Boundary::LOWER_DIGIT])
+                                .to_case(Case::Snake)
+                        );
 
-                        let interface = format_ident!("{}", enum_parts[0].to_case(Case::Snake));
+                        let interface = format_ident!(
+                            "{}",
+                            enum_parts[0]
+                                .without_boundaries(&[Boundary::LOWER_DIGIT])
+                                .to_case(Case::Snake)
+                        );
                         let ident = format_ident!("{}", enum_parts[1].to_case(Case::Pascal));
                         quote! { super::super::#protocol::#interface::#ident }
                     } else {
