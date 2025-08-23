@@ -5,8 +5,8 @@ denali_macro::wayland_protocols!(
 fn test() {
     use denali_utils::wire::serde::Encode;
 
-    let capabilities_message = ext_background_effect_v_1::ext_background_effect_manager_v_1::CapabilitiesEvent {
-        flags: ext_background_effect_v_1::ext_background_effect_manager_v_1::Capability::BLUR,
+    let capabilities_message = ext_background_effect_v1::ext_background_effect_manager_v1::CapabilitiesEvent {
+        flags: ext_background_effect_v1::ext_background_effect_manager_v1::Capability::BLUR,
     };
 
     let mut buffer = [0u8; 64];

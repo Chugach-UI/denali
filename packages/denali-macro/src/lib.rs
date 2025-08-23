@@ -1,10 +1,10 @@
+mod helpers;
 mod protocol_parser;
 mod wire;
-mod helpers;
 
 use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
 
-use convert_case::{Case, Casing};
+use convert_case::{Boundary, Case, Casing};
 use proc_macro::TokenStream;
 use protocol_parser::Protocol;
 use quote::{format_ident, quote};
@@ -33,28 +33,47 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
         path.into()
     };
 
-    let protocols = collect_files(&path)?.into_iter().map(|file| 
-        protocol_parser::parse_protocol(file)
-            .map_err(|_| "Failed to parse Wayland protocol file")
-    ).filter_map(Result::ok).collect::<Vec<_>>();
+    let protocols = collect_files(&path)?
+        .into_iter()
+        .map(|file| {
+            protocol_parser::parse_protocol(file)
+                .map_err(|_| "Failed to parse Wayland protocol file")
+        })
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
 
     let interface_map = build_interface_map(&protocols);
 
     let modules = protocols.into_iter().map(|protocol| {
-        let mod_name = format_ident!("{}", protocol.name.to_case(Case::Snake));
+        let mod_name = format_ident!(
+            "{}",
+            protocol
+                .name
+                .without_boundaries(&[Boundary::LOWER_DIGIT])
+                .to_case(Case::Snake)
+        );
         let desc = helpers::build_documentation(&protocol.description, &None, &None, &None);
 
         let interfaces = protocol.interfaces.iter().map(|interface| {
-            let interface_name = format_ident!("{}", interface.name.to_case(Case::Snake));
-            let interface_desc = helpers::build_documentation(&interface.description, &None, &None, &None);
+            let interface_name = format_ident!(
+                "{}",
+                interface
+                    .name
+                    .without_boundaries(&[Boundary::LOWER_DIGIT])
+                    .to_case(Case::Snake)
+            );
+            let interface_desc =
+                helpers::build_documentation(&interface.description, &None, &None, &None);
             let interface_version = interface.version;
 
-            let events = interface.elements.iter().map(|element| {
-                match element {
-                    protocol_parser::Element::Event(event) => Some(wire::build_event(event, &interface_map)),
-                    protocol_parser::Element::Request(request) => Some(wire::build_request(request, &interface_map)),
-                    protocol_parser::Element::Enum(enum_) => Some(wire::build_enum(enum_)),
+            let events = interface.elements.iter().map(|element| match element {
+                protocol_parser::Element::Event(event) => {
+                    Some(wire::build_event(event, &interface_map))
                 }
+                protocol_parser::Element::Request(request) => {
+                    Some(wire::build_request(request, &interface_map))
+                }
+                protocol_parser::Element::Enum(enum_) => Some(wire::build_enum(enum_)),
             });
 
             quote! {
