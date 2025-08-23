@@ -5,12 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use denali_utils::proxy::{IdManager, Proxy, SharedIdManager};
+use denali_utils::proxy::{IdManager, IdManagerInner, Proxy};
 
 pub struct DisplayConnection {
     socket: UnixStream,
-    id_manager: SharedIdManager,
-    display: dwl::display::Display,
+    id_manager: IdManager,
+    display: denali::display::Display,
 }
 
 impl DisplayConnection {
@@ -23,10 +23,9 @@ impl DisplayConnection {
             Self::connect_display(wayland_display.to_string_lossy().into_owned())?
         };
 
-        let id_manager = Arc::new(Mutex::new(IdManager::new()));
+        let id_manager = IdManager::default();
 
-        let display =
-            dwl::display::Display::from(Proxy::new_with_manager(1, id_manager.clone()).unwrap());
+        let display = denali::display::Display::from(Proxy::new(1, id_manager.clone()).unwrap());
 
         Ok(Self {
             socket,
@@ -35,7 +34,7 @@ impl DisplayConnection {
         })
     }
 
-    pub fn display(&self) -> &dwl::display::Display {
+    pub fn display(&self) -> &denali::display::Display {
         &self.display
     }
 
@@ -57,7 +56,7 @@ impl DisplayConnection {
 }
 
 // TEMP: Temporary type definitions to appease the compiler until codegen does this
-mod dwl {
+mod denali {
     pub mod display {
         pub struct Display(denali_utils::proxy::Proxy);
         impl Display {
@@ -65,7 +64,7 @@ mod dwl {
                 todo!()
             }
 
-            pub fn get_registry(&mut self) -> super::registry::Registry {
+            pub fn registry(&self) -> super::registry::Registry {
                 self.0.create_object(self.0.version()).unwrap()
             }
         }
