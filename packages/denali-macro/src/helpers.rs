@@ -1,3 +1,4 @@
+use convert_case::{Boundary, Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
@@ -26,17 +27,27 @@ pub fn build_documentation(
     since: &Option<String>,
     deprecated_since: &Option<String>,
 ) -> TokenStream {
-    let description = description.clone().or_else(|| {
-        summary.clone().map(|summary| Description {
-            summary,
-            content: None,
+    let description = description
+        .clone()
+        .or_else(|| {
+            summary.clone().map(|summary| Description {
+                summary,
+                content: None,
+            })
         })
-    }).unwrap_or_default();
+        .unwrap_or_default();
     let summary = description.summary.trim();
-    let content = description.content.unwrap_or_default().lines().map(|line| {
-        line.trim().to_string()
-    }).collect::<Vec<_>>().join("\n");
-    let since = since.clone().map(|since| format!("Since: v{since}")).unwrap_or_default();
+    let content = description
+        .content
+        .unwrap_or_default()
+        .lines()
+        .map(|line| line.trim().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let since = since
+        .clone()
+        .map(|since| format!("Since: v{since}"))
+        .unwrap_or_default();
 
     let deprecation = if let Some(since) = deprecated_since {
         let since = format!("Deprecated since: v{since}");
@@ -53,4 +64,13 @@ pub fn build_documentation(
         #deprecation
         #[doc = #doc_content]
     }
+}
+
+pub fn build_ident(name: &str, case: Case) -> syn::Ident {
+    syn::Ident::new(
+        &name
+            .without_boundaries(&[Boundary::LOWER_DIGIT])
+            .to_case(case),
+        Span::call_site(),
+    )
 }

@@ -1,13 +1,16 @@
 mod helpers;
+mod interface;
 mod protocol_parser;
 mod wire;
 
 use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
 
-use convert_case::{Boundary, Case, Casing};
+use convert_case::Case;
+use helpers::build_ident;
+use interface::build_interface_module;
 use proc_macro::TokenStream;
 use protocol_parser::Protocol;
-use quote::{format_ident, quote};
+use quote::quote;
 use walkdir::WalkDir;
 
 #[proc_macro]
@@ -45,45 +48,14 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
     let interface_map = build_interface_map(&protocols);
 
     let modules = protocols.into_iter().map(|protocol| {
-        let mod_name = format_ident!(
-            "{}",
-            protocol
-                .name
-                .without_boundaries(&[Boundary::LOWER_DIGIT])
-                .to_case(Case::Snake)
-        );
+        let mod_name = build_ident(&protocol.name, Case::Snake);
+
         let desc = helpers::build_documentation(&protocol.description, &None, &None, &None);
 
-        let interfaces = protocol.interfaces.iter().map(|interface| {
-            let interface_name = format_ident!(
-                "{}",
-                interface
-                    .name
-                    .without_boundaries(&[Boundary::LOWER_DIGIT])
-                    .to_case(Case::Snake)
-            );
-            let interface_desc =
-                helpers::build_documentation(&interface.description, &None, &None, &None);
-            let interface_version = interface.version;
-
-            let events = interface.elements.iter().map(|element| match element {
-                protocol_parser::Element::Event(event) => {
-                    Some(wire::build_event(event, &interface_map))
-                }
-                protocol_parser::Element::Request(request) => {
-                    Some(wire::build_request(request, &interface_map))
-                }
-                protocol_parser::Element::Enum(enum_) => Some(wire::build_enum(enum_)),
-            });
-
-            quote! {
-                #interface_desc
-                pub mod #interface_name {
-                    pub const VERSION: u32 = #interface_version;
-                    #(#events)*
-                }
-            }
-        });
+        let interfaces = protocol
+            .interfaces
+            .iter()
+            .map(|interface| build_interface_module(interface, &interface_map));
 
         quote! {
             #desc

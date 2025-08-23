@@ -1,7 +1,7 @@
 pub mod display_connection;
 
 denali_macro::wayland_protocols!(
-    "/home/gavin/Dev/rust/denali/target/debug/build/denali-wayland-b3c61ac19c7e8fb4/out/protocols"
+    "/home/gavin/Dev/rust/denali/target/debug/build/denali-wayland-2d17737998a5d450/out/protocols"
 );
 
 fn test() {

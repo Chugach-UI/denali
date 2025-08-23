@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
-use convert_case::{Boundary, Case, Casing};
+use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    helpers::{arg_type_to_rust_type, build_documentation},
-    protocol_parser::{Arg, Description, Event, Request},
+    build_ident, helpers::{arg_type_to_rust_type, build_documentation}, protocol_parser::{Arg, Description, Event, Request}
 };
 
 pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> TokenStream {
@@ -81,8 +80,7 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         .args()
         .iter()
         .map(|arg| {
-            let arg_name = arg.name.to_case(Case::Snake);
-            format_ident!("{}", arg_name)
+            build_ident(&arg.name, Case::Snake)
         })
         .collect::<Vec<_>>();
 
@@ -90,7 +88,7 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         .args()
         .iter()
         .map(|arg| {
-            let arg_name = format_ident!("{}", arg.name.to_case(Case::Snake));
+            let arg_name = build_ident(&arg.name, Case::Snake);
             let arg_docs = build_documentation(&arg.description, &arg.summary, &None, &None);
             let arg_type = arg
                 .enum_
@@ -98,26 +96,18 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
                 .map(|enum_| {
                     let enum_parts = enum_.split('.').collect::<Vec<_>>();
                     let path = if enum_parts.len() == 1 {
-                        let ident = format_ident!("{}", enum_parts[0].to_case(Case::Pascal));
+                        let ident = build_ident(enum_parts[0], Case::Pascal);
                         quote! { #ident }
                     } else if enum_parts.len() == 2 {
                         let protocol = interface_map.get(enum_parts[0]).unwrap_or_else(|| {
                             panic!("Protocol '{}' not found in interface map", enum_parts[0])
                         });
-                        let protocol = format_ident!(
-                            "{}",
-                            protocol
-                                .without_boundaries(&[Boundary::LOWER_DIGIT])
-                                .to_case(Case::Snake)
-                        );
+                        
+                        let protocol = build_ident(protocol, Case::Snake);
+                        let interface = build_ident(enum_parts[0], Case::Snake);
+                       
+                        let ident = build_ident(enum_parts[1], Case::Pascal);
 
-                        let interface = format_ident!(
-                            "{}",
-                            enum_parts[0]
-                                .without_boundaries(&[Boundary::LOWER_DIGIT])
-                                .to_case(Case::Snake)
-                        );
-                        let ident = format_ident!("{}", enum_parts[1].to_case(Case::Pascal));
                         quote! { super::super::#protocol::#interface::#ident }
                     } else {
                         panic!("Invalid enum path: {}", enum_);
