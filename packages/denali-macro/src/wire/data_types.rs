@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{helpers::build_documentation, protocol_parser::Enum};
+use crate::{build_ident, helpers::build_documentation, protocol_parser::Enum};
 
 pub fn build_enum(enum_: &Enum) -> TokenStream {
     #[derive(PartialEq, Eq)]
@@ -38,17 +38,7 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
                 Case::Pascal
             };
 
-            let converted_case = entry.name.to_case(proper_case);
-
-            let name = if let Some(c) = converted_case.chars().next()
-                && c.is_ascii_digit()
-            {
-                format!("_{}", converted_case)
-            } else {
-                converted_case
-            };
-
-            format_ident!("{}", name)
+            build_ident(&entry.name, proper_case)
         })
         .collect::<Vec<_>>();
     let variant_values = enum_

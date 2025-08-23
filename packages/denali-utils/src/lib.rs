@@ -4,7 +4,9 @@ pub mod fixed;
 pub mod proxy;
 pub mod wire;
 
-pub trait Object: From<proxy::Proxy> {}
+pub trait Object: From<proxy::Proxy> {
+    fn id(&self) -> u32;
+}
 pub trait Interface: Object {
     const INTERFACE: &'static str;
     const MAX_VERSION: u32;

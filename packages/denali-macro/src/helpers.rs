@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use convert_case::{Boundary, Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::protocol_parser::Description;
+use crate::protocol_parser::{Arg, Description};
 
 pub fn arg_type_to_rust_type(type_: &str, lifetime: Option<&str>) -> TokenStream {
     let lifetime = lifetime
@@ -66,11 +68,54 @@ pub fn build_documentation(
     }
 }
 
+const ILLEGAL_IDENTS: [&str; 47] = [
+    "as", "break", "const", "continue", "crate", "else", "enum", "extern", "fn", "for", "if",
+    "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "static",
+    "struct", "trait", "type", "unsafe", "use", "where", "while", "async", "await", "dyn",
+    "abstract", "become", "box", "do", "final", "macro", "override", "priv", "typeof", "unsized",
+    "virtual", "yield", "try", "gen",
+];
+
 pub fn build_ident(name: &str, case: Case) -> syn::Ident {
-    syn::Ident::new(
-        &name
-            .without_boundaries(&[Boundary::LOWER_DIGIT])
-            .to_case(case),
-        Span::call_site(),
-    )
+    let name = name
+        .without_boundaries(&[Boundary::LOWER_DIGIT])
+        .to_case(case);
+
+    let name = if name.chars().next().is_some_and(|c| c.is_ascii_digit())
+        || ILLEGAL_IDENTS.contains(&name.as_str())
+    {
+        format!("_{name}")
+    } else {
+        name
+    };
+
+    syn::Ident::new(&name, Span::call_site())
+}
+
+pub fn expand_argument_type(arg: &Arg, interface_map: &BTreeMap<String, String>, lifetime: Option<&str>) -> TokenStream {
+    arg.enum_
+        .as_ref()
+        .map(|enum_| {
+            let enum_parts = enum_.split('.').collect::<Vec<_>>();
+            let path = if enum_parts.len() == 1 {
+                let ident = build_ident(enum_parts[0], Case::Pascal);
+                quote! { #ident }
+            } else if enum_parts.len() == 2 {
+                let protocol = interface_map.get(enum_parts[0]).unwrap_or_else(|| {
+                    panic!("Protocol '{}' not found in interface map", enum_parts[0])
+                });
+
+                let protocol = build_ident(protocol, Case::Snake);
+                let interface = build_ident(enum_parts[0], Case::Snake);
+
+                let ident = build_ident(enum_parts[1], Case::Pascal);
+
+                quote! { super::super::#protocol::#interface::#ident }
+            } else {
+                panic!("Invalid enum path: {}", enum_);
+            };
+
+            quote! {#path}
+        })
+        .unwrap_or_else(|| arg_type_to_rust_type(&arg.type_, lifetime))
 }

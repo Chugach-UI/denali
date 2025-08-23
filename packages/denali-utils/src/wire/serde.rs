@@ -112,8 +112,8 @@ impl_serde! {
     #[repr(C)]
     pub struct MessageHeader {
         pub object_id: u32,
-        pub size: u16,
         pub opcode: u16,
+        pub size: u16,
     }
 }
 impl_serde!(u32, i32);

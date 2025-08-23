@@ -4,30 +4,173 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::{build_ident, helpers::build_documentation, protocol_parser::{Element, Interface, Request}, wire::{build_enum, build_event, build_request}};
+use crate::{
+    build_ident,
+    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
+    protocol_parser::{Arg, Element, Interface, Request},
+    wire::{build_enum, build_event, build_request},
+};
 
-pub fn build_request_method(request: &Request) -> TokenStream {
-    
-    todo!()
+pub fn build_request_method(
+    request: &Request,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
+    let name = request.name.to_case(Case::Snake);
+    let name = name.trim_start_matches("get_");
+    let try_name = build_ident(&format!("try_{name}"), Case::Snake);
+    let name = build_ident(name, Case::Snake);
+
+    let doc = build_documentation(&request.description, &None, &None, &None);
+
+    let self_ = if request.type_.as_ref().is_some_and(|t| t == "destructor") {
+        quote! { self }
+    } else {
+        quote! { &self }
+    };
+
+    let mut arg_names = request
+        .args
+        .iter()
+        .filter(|arg| arg.type_ != "new_id")
+        .map(|arg| build_ident(&arg.name, Case::Snake))
+        .collect::<Vec<_>>();
+
+    let mut args = request
+        .args
+        .iter()
+        .filter(|arg| arg.type_ != "new_id")
+        .map(|arg| {
+            let name = build_ident(&arg.name, Case::Snake);
+            let arg_type = expand_argument_type(arg, interface_map, None);
+            quote! { #name: #arg_type }
+        })
+        .collect::<Vec<_>>();
+
+    let new_id_arg = request.args.iter().find(|arg| arg.type_ == "new_id");
+    let new_id_generic = matches!(
+        new_id_arg,
+        Some(Arg {
+            interface: None,
+            ..
+        })
+    );
+
+    let (generic, ret) = match new_id_arg {
+        Some(Arg {
+            interface: Some(interface),
+            ..
+        }) => {
+            let protocol = interface_map
+                .get(interface)
+                .expect("Interface not found in interface map");
+            let protocol = build_ident(protocol, Case::Snake);
+
+            let interface_mod = build_ident(interface, Case::Snake);
+            let interface_type = build_ident(interface, Case::Pascal);
+
+            let type_path = quote! { super::super::#protocol::#interface_mod::#interface_type };
+
+            (quote! {}, type_path)
+        }
+        Some(Arg { .. }) => {
+            args.push(quote! { version: u32 });
+            arg_names.push(build_ident("version", Case::Snake));
+
+            let generic = quote! { <T: denali_utils::Interface> };
+
+            (generic, quote! { T })
+        }
+        None => (quote! {}, quote! {()}),
+    };
+
+    let version = if new_id_generic {
+        quote! {
+            version
+        }
+    } else {
+        quote! {
+            self.0.version()
+        }
+    };
+    let create_obj = if new_id_arg.is_some() {
+        quote! {
+            let version = #version;
+            let interface = <#ret as denali_utils::Interface>::INTERFACE;
+
+            //TODO: AAAHAHAH
+            let new_obj: #ret = self.0.create_object(version).unwrap();
+            let id = denali_utils::Object::id(&new_obj);
+        }
+    } else {
+        quote! {}
+    };
+    let return_expr = if new_id_arg.is_some() {
+        quote! {
+            new_obj
+        }
+    } else {
+        quote! {()}
+    };
+
+    quote! {
+        #doc
+        /// # Errors
+        ///
+        /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
+        pub fn #try_name #generic (#self_, #(#args),*) -> Result<#ret, denali_utils::wire::serde::SerdeError> {
+            #create_obj
+
+            //TODO Serialize and send the request...
+
+            Ok(#return_expr)
+        }
+        #doc
+        pub fn #name #generic (#self_, #(#args),*) -> #ret {
+            match self.#try_name(#(#arg_names),*) {
+                Ok(ret) => ret,
+                Err(err) => panic!("Failed to send request: {}", err),
+            }
+        }
+    }
 }
 
 //TODO: DO SERVER SIDE CODEGEN AS WELL
-pub fn build_interface(interface: &Interface) -> TokenStream {
+pub fn build_interface(
+    interface: &Interface,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
     let documentation = build_documentation(&interface.description, &None, &None, &None);
     let interface_str = interface.name.to_case(Case::Snake);
     let name = build_ident(&interface.name, Case::Pascal);
     let version = interface.version;
 
+    let methods = interface.elements.iter().filter_map(|element| {
+        if let Element::Request(request) = element {
+            Some(build_request_method(request, interface_map))
+        } else {
+            None
+        }
+    });
+
     quote! {
         #documentation
         pub struct #name(denali_utils::proxy::Proxy);
+
+        impl #name {
+            #(#methods)*
+        }
+
         impl From<denali_utils::proxy::Proxy> for #name {
             fn from(proxy: denali_utils::proxy::Proxy) -> Self {
                 Self(proxy)
             }
         }
 
-        impl denali_utils::Object for #name {}
+        impl denali_utils::Object for #name {
+            fn id(&self) -> u32 {
+                self.0.id()
+            }
+        }
         impl denali_utils::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
@@ -36,23 +179,21 @@ pub fn build_interface(interface: &Interface) -> TokenStream {
     }
 }
 
-pub fn build_interface_module(interface: &Interface, interface_map: &BTreeMap<String, String>) -> TokenStream {
+pub fn build_interface_module(
+    interface: &Interface,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
     let interface_name = build_ident(&interface.name, Case::Snake);
-    let interface_desc =
-        build_documentation(&interface.description, &None, &None, &None);
+    let interface_desc = build_documentation(&interface.description, &None, &None, &None);
     let interface_version = interface.version;
 
     let events = interface.elements.iter().map(|element| match element {
-        Element::Event(event) => {
-            Some(build_event(event, interface_map))
-        }
-        Element::Request(request) => {
-            Some(build_request(request, interface_map))
-        }
+        Element::Event(event) => Some(build_event(event, interface_map)),
+        Element::Request(request) => Some(build_request(request, interface_map)),
         Element::Enum(enum_) => Some(build_enum(enum_)),
     });
 
-    let interface = build_interface(interface);
+    let interface = build_interface(interface, interface_map);
 
     quote! {
         #interface_desc

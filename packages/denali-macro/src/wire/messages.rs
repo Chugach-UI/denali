@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    build_ident, helpers::{arg_type_to_rust_type, build_documentation}, protocol_parser::{Arg, Description, Event, Request}
+    build_ident, helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type}, protocol_parser::{Arg, Description, Event, Request}
 };
 
 pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> TokenStream {
@@ -90,32 +90,7 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         .map(|arg| {
             let arg_name = build_ident(&arg.name, Case::Snake);
             let arg_docs = build_documentation(&arg.description, &arg.summary, &None, &None);
-            let arg_type = arg
-                .enum_
-                .as_ref()
-                .map(|enum_| {
-                    let enum_parts = enum_.split('.').collect::<Vec<_>>();
-                    let path = if enum_parts.len() == 1 {
-                        let ident = build_ident(enum_parts[0], Case::Pascal);
-                        quote! { #ident }
-                    } else if enum_parts.len() == 2 {
-                        let protocol = interface_map.get(enum_parts[0]).unwrap_or_else(|| {
-                            panic!("Protocol '{}' not found in interface map", enum_parts[0])
-                        });
-                        
-                        let protocol = build_ident(protocol, Case::Snake);
-                        let interface = build_ident(enum_parts[0], Case::Snake);
-                       
-                        let ident = build_ident(enum_parts[1], Case::Pascal);
-
-                        quote! { super::super::#protocol::#interface::#ident }
-                    } else {
-                        panic!("Invalid enum path: {}", enum_);
-                    };
-
-                    quote! {#path}
-                })
-                .unwrap_or_else(|| arg_type_to_rust_type(&arg.type_, Some("'a")));
+            let arg_type = expand_argument_type(arg, interface_map, Some("'a"));
             quote! {
                 #arg_docs
                 pub #arg_name: #arg_type,
