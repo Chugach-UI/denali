@@ -1,7 +1,9 @@
 #![cfg_attr(test, feature(test))]
 
 pub mod fixed;
+pub mod id_manager;
 pub mod proxy;
+pub mod socket;
 pub mod wire;
 
 pub trait Object: From<proxy::Proxy> {
@@ -17,4 +19,3 @@ pub trait Interface: Object {
 // instead they are only required to depend on denali-utils.
 #[doc(hidden)]
 pub use bitflags as __bitflags;
-
