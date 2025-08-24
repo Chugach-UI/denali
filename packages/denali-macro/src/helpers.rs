@@ -92,10 +92,15 @@ pub fn build_ident(name: &str, case: Case) -> syn::Ident {
     syn::Ident::new(&name, Span::call_site())
 }
 
-pub fn expand_argument_type(arg: &Arg, interface_map: &BTreeMap<String, String>, lifetime: Option<&str>) -> TokenStream {
-    arg.enum_
-        .as_ref()
-        .map(|enum_| {
+pub fn expand_argument_type(
+    arg: &Arg,
+    interface_map: &BTreeMap<String, String>,
+    lifetime: Option<&str>,
+) -> TokenStream {
+    match arg {
+        Arg {
+            enum_: Some(enum_), ..
+        } => {
             let enum_parts = enum_.split('.').collect::<Vec<_>>();
             let path = if enum_parts.len() == 1 {
                 let ident = build_ident(enum_parts[0], Case::Pascal);
@@ -116,6 +121,26 @@ pub fn expand_argument_type(arg: &Arg, interface_map: &BTreeMap<String, String>,
             };
 
             quote! {#path}
-        })
-        .unwrap_or_else(|| arg_type_to_rust_type(&arg.type_, lifetime))
+        }
+        Arg {
+            type_,
+            interface: Some(_),
+            ..
+        } if type_ == "new_id" => quote! {
+            denali_utils::wire::serde::NewId
+        },
+        Arg { type_, .. } if type_ == "new_id" => {
+            let lifetime = match lifetime {
+                Some(l) => {
+                    let lifetime = syn::Lifetime::new(l, Span::call_site());
+                    quote! { <#lifetime> }
+                }
+                None => quote! {},
+            };
+            quote! {
+                denali_utils::wire::serde::DynamicallyTypedNewId #lifetime
+            }
+        }
+        arg => arg_type_to_rust_type(&arg.type_, lifetime),
+    }
 }

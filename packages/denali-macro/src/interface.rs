@@ -6,7 +6,7 @@ use quote::quote;
 
 use crate::{
     build_ident,
-    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
+    helpers::{build_documentation, expand_argument_type},
     protocol_parser::{Arg, Element, Interface, Request},
     wire::{build_enum, build_event, build_request},
 };
@@ -92,14 +92,28 @@ pub fn build_request_method(
             self.0.version()
         }
     };
+    let new_id = if new_id_generic {
+        quote! {
+            let interface = <#ret as denali_utils::Interface>::INTERFACE;
+            let new_id = denali_utils::wire::serde::DynamicallyTypedNewId {
+                interface: denali_utils::wire::serde::String::from(interface),
+                version,
+                id,
+            };
+        }
+    } else {
+        quote! {
+            let new_id = id;
+        }
+    };
     let create_obj = if new_id_arg.is_some() {
+        //TODO: AAAHAHAH
         quote! {
             let version = #version;
-            let interface = <#ret as denali_utils::Interface>::INTERFACE;
-
-            //TODO: AAAHAHAH
             let new_obj: #ret = self.0.create_object(version).unwrap();
             let id = denali_utils::Object::id(&new_obj);
+
+            #new_id
         }
     } else {
         quote! {}

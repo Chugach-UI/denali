@@ -150,6 +150,45 @@ impl Encode for Fixed {
     }
 }
 
+pub type ObjectId = u32;
+
+/// A statically typed new ID.
+pub type NewId = ObjectId;
+pub struct DynamicallyTypedNewId<'a> {
+    pub interface: String<'a>,
+    pub version: u32,
+    pub id: ObjectId,
+}
+impl MessageSize for DynamicallyTypedNewId<'_> {
+    fn size(&self) -> usize {
+        self.interface.size() + u32::SIZE + ObjectId::SIZE
+    }
+}
+impl Decode for DynamicallyTypedNewId<'_> {
+    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+        let mut traverser = super::MessageDecoder::new(data);
+
+        let interface: String = traverser.read()?;
+        let version = traverser.read()?;
+        let id = traverser.read()?;
+        Ok(DynamicallyTypedNewId {
+            interface,
+            version,
+            id,
+        })
+    }
+}
+impl Encode for DynamicallyTypedNewId<'_> {
+    fn encode(&self, data: &mut [u8]) -> Result<usize, SerdeError> {
+        let mut traverser = super::MessageEncoder::new(data);
+
+        traverser.write(&self.interface)?;
+        traverser.write(&self.version)?;
+        traverser.write(&self.id)?;
+        Ok(self.size())
+    }
+}
+
 pub struct Array<'a> {
     pub data: Cow<'a, [u8]>,
 }
@@ -297,5 +336,5 @@ pub enum SerdeError {
     #[error("IO error occurred while decoding")]
     IoError(#[from] std::io::Error),
     #[error("Invalid enum value")]
-    InvalidEnumValue
+    InvalidEnumValue,
 }

@@ -5,7 +5,9 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    build_ident, helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type}, protocol_parser::{Arg, Description, Event, Request}
+    build_ident,
+    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
+    protocol_parser::{Arg, Description, Event, Request},
 };
 
 pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> TokenStream {
@@ -79,9 +81,7 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
     let arg_names = event
         .args()
         .iter()
-        .map(|arg| {
-            build_ident(&arg.name, Case::Snake)
-        })
+        .map(|arg| build_ident(&arg.name, Case::Snake))
         .collect::<Vec<_>>();
 
     let struct_members = event
@@ -101,7 +101,11 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
     let lifetime = event
         .args()
         .iter()
-        .find(|arg| arg.type_ == "string" || arg.type_ == "array")
+        .find(|arg| {
+            arg.type_ == "string"
+                || arg.type_ == "array"
+                || (arg.type_ == "new_id" && arg.interface.is_none())
+        })
         .map(|_| quote! { 'a })
         .into_iter()
         .collect::<Vec<_>>();
