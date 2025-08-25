@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, os::fd};
+use std::collections::BTreeMap;
 
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
@@ -90,8 +90,9 @@ fn build_request_method_body(
         .filter(|arg| arg.type_ == "fd")
         .map(|arg| {
             let name = build_ident(&arg.name, Case::Snake);
-            quote! { #name: () }
-        });
+            quote! { #name }
+        })
+        .collect::<Vec<_>>();
     let new_id_arg = if let Some(new_id_arg) = new_id_arg {
         let name = build_ident(&new_id_arg.name, Case::Snake);
         quote! { #name: new_id }
@@ -99,18 +100,31 @@ fn build_request_method_body(
         quote! {}
     };
 
-    let create_request = quote! {
+    let create_request_requirements = quote! {
+        use denali_utils::{wire::serde::{MessageSize, CompileTimeMessageSize}, Object};
+
         let request = #request_struct {
             #(#passthrough_args,)*
-            #(#fd_args,)*
+            #(#fd_args: (),)*
             #new_id_arg
         };
+        let object_id = self.id();
+        let opcode = #request_struct::OPCODE;
+        let size = request.size() + denali_utils::wire::serde::MessageHeader::SIZE;
+
+        let mut buffer = vec![0u8; size];
+        let fds: Vec<std::os::fd::RawFd> = vec![#(#fd_args.into_raw_fd(),)*];
+
+        denali_utils::wire::encode_message(&request, object_id, opcode, &mut buffer)?;
+
+
+        self.send_request(denali_utils::proxy::RequestMessage { fds, buffer });
     };
 
     quote! {
         #create_obj
 
-        #create_request
+        #create_request_requirements
 
         Ok(#return_expr)
     }
@@ -146,7 +160,10 @@ pub fn build_request_method(
         .filter(|arg| arg.type_ != "new_id")
         .map(|arg| {
             let name = build_ident(&arg.name, Case::Snake);
-            let arg_type = expand_argument_type(arg, interface_map, None);
+            let arg_type = match arg.type_.as_str() {
+                "fd" => quote! { impl std::os::fd::IntoRawFd },
+                _ => expand_argument_type(arg, interface_map, None),
+            };
             quote! { #name: #arg_type }
         })
         .collect::<Vec<_>>();
@@ -237,6 +254,9 @@ pub fn build_interface(
             fn id(&self) -> u32 {
                 self.0.id()
             }
+            fn send_request(&self, request: denali_utils::proxy::RequestMessage) {
+                self.0.send_request(request);
+            }
         }
         impl denali_utils::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
@@ -255,8 +275,8 @@ pub fn build_interface_module(
     let interface_version = interface.version;
 
     let events = interface.elements.iter().map(|element| match element {
-        Element::Event(event) => Some(build_event(event, interface_map)),
-        Element::Request(request) => Some(build_request(request, interface_map)),
+        Element::Event(event) => Some(build_event(event, interface, interface_map)),
+        Element::Request(request) => Some(build_request(request, interface, interface_map)),
         Element::Enum(enum_) => Some(build_enum(enum_)),
     });
 

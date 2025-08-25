@@ -71,7 +71,12 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         .iter()
         .zip(variant_names.iter().zip(variant_values.iter()))
         .map(|(entry, (name, value))| {
-            let desc = build_documentation(&entry.description, &entry.summary, &entry.since, &entry.deprecated_since);
+            let desc = build_documentation(
+                &entry.description,
+                &entry.summary,
+                &entry.since,
+                &entry.deprecated_since,
+            );
 
             if bitfield {
                 quote! {

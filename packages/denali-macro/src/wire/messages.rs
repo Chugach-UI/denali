@@ -6,17 +6,28 @@ use quote::{format_ident, quote};
 
 use crate::{
     build_ident,
-    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
-    protocol_parser::{Arg, Description, Event, Request},
+    helpers::{
+        arg_type_to_rust_type, build_documentation, expand_argument_type,
+        is_size_known_at_compile_time,
+    },
+    protocol_parser::{Arg, Description, Event, Interface, Request},
 };
 
-pub fn build_event(event: &Event, interface_map: &BTreeMap<String, String>) -> TokenStream {
+pub fn build_event(
+    event: &Event,
+    interface: &Interface,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
     let message = Message::Event(event);
-    build_message(&message, interface_map)
+    build_message(&message, interface, interface_map)
 }
-pub fn build_request(request: &Request, interface_map: &BTreeMap<String, String>) -> TokenStream {
+pub fn build_request(
+    request: &Request,
+    interface: &Interface,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
     let message = Message::Request(request);
-    build_message(&message, interface_map)
+    build_message(&message, interface, interface_map)
 }
 
 enum Message<'a> {
@@ -64,27 +75,52 @@ impl Message<'_> {
     }
 }
 
-fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> TokenStream {
-    let suffix = if event.is_request() {
+fn build_message(
+    message: &Message,
+    interface: &Interface,
+    interface_map: &BTreeMap<String, String>,
+) -> TokenStream {
+    let suffix = if message.is_request() {
         "Request"
     } else {
         "Event"
     };
-    let name = format_ident!("{}{suffix}", event.name().to_case(Case::Pascal));
+
+    let mut opcode: u16 = 0;
+    for elem in interface.elements.iter() {
+        match elem {
+            crate::protocol_parser::Element::Request(req) if message.is_request() => {
+                if req.name == message.name() {
+                    break;
+                }
+                opcode += 1;
+            }
+            crate::protocol_parser::Element::Event(evt) if !message.is_request() => {
+                if evt.name == message.name() {
+                    break;
+                }
+                opcode += 1;
+            }
+            _ => {}
+        }
+    }
+    let opcode = quote! { const OPCODE: u16 = #opcode; };
+
+    let name = format_ident!("{}{suffix}", message.name().to_case(Case::Pascal));
     let docs = build_documentation(
-        event.description(),
+        message.description(),
         &None,
-        event.since(),
-        event.deprecated_since(),
+        message.since(),
+        message.deprecated_since(),
     );
 
-    let arg_names = event
+    let arg_names = message
         .args()
         .iter()
         .map(|arg| build_ident(&arg.name, Case::Snake))
         .collect::<Vec<_>>();
 
-    let struct_members = event
+    let struct_members = message
         .args()
         .iter()
         .map(|arg| {
@@ -98,7 +134,7 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         })
         .collect::<Vec<_>>();
 
-    let lifetime = event
+    let lifetime = message
         .args()
         .iter()
         .find(|arg| {
@@ -110,16 +146,13 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         .into_iter()
         .collect::<Vec<_>>();
 
-    let args_with_size = event
+    let args_with_size = message
         .args()
         .iter()
         .filter(|arg| arg.type_ != "fd")
         .collect::<Vec<_>>();
 
-    let compile_time_size = if args_with_size
-        .iter()
-        .any(|arg| arg.type_ == "string" || arg.type_ == "array")
-    {
+    let compile_time_size = if is_size_known_at_compile_time(&args_with_size) {
         quote! {}
     } else {
         let size = if args_with_size.is_empty() {
@@ -143,6 +176,9 @@ fn build_message(event: &Message, interface_map: &BTreeMap<String, String>) -> T
         #docs
         pub struct #name #(<#lifetime>)* {
             #(#struct_members)*
+        }
+        impl #(<#lifetime>)* #name #(<#lifetime>)* {
+            #opcode
         }
         impl #(<#lifetime>)* denali_utils::wire::serde::MessageSize for #name #(<#lifetime>)* {
             fn size(&self) -> usize {

@@ -1,5 +1,7 @@
 use std::io::Cursor;
 
+use serde::CompileTimeMessageSize;
+
 pub mod serde;
 
 fn round_up_4(pos: u64) -> u64 {
@@ -83,6 +85,25 @@ impl<'a> MessageEncoder<'a> {
     pub fn get_ref(&self) -> &[u8] {
         self.data.get_ref()
     }
+}
+
+pub fn encode_message<T: serde::Encode>(
+    message: &T,
+    object_id: u32,
+    opcode: u16,
+    data: &mut [u8],
+) -> Result<usize, serde::SerdeError> {
+    let mut traverser = MessageEncoder::new(data);
+    let header = serde::MessageHeader {
+        object_id,
+        size: (serde::MessageHeader::SIZE + message.size()) as u16,
+        opcode,
+    };
+
+    traverser.write(&header)?;
+    traverser.write(message)?;
+
+    Ok(traverser.position() as usize)
 }
 
 #[cfg(test)]

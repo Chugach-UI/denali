@@ -17,10 +17,11 @@ impl DisplayConnection {
         let wayland_display = env::var_os("WAYLAND_DISPLAY").unwrap_or("wayland-0".into());
         // TODO: cleanup this string processing?
         let socket = Self::connect_to_display(wayland_display.to_string_lossy().into_owned())?;
+        let (sender, _receiver) = crossbeam::channel::unbounded();
 
         let id_manager = IdManager::default();
 
-        let display = WlDisplay::from(Proxy::new(1, id_manager.clone()).unwrap());
+        let display = WlDisplay::from(Proxy::new(1, id_manager.clone(), sender).unwrap());
 
         Ok(Self {
             socket,

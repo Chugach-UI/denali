@@ -144,3 +144,11 @@ pub fn expand_argument_type(
         arg => arg_type_to_rust_type(&arg.type_, lifetime),
     }
 }
+
+pub fn is_size_known_at_compile_time(args: &[&Arg]) -> bool {
+    args.iter().any(|arg| {
+        arg.type_ == "string"
+            || arg.type_ == "array"
+            || (arg.type_ == "new_id" && arg.interface.is_none())
+    })
+}
