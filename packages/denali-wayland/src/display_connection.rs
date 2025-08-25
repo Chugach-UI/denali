@@ -2,7 +2,7 @@ use std::{env, os::unix::net::UnixStream, path::PathBuf};
 
 use thiserror::Error;
 
-use denali_utils::proxy::{IdManager, Proxy};
+use denali_utils::{id_manager::IdManager, proxy::Proxy};
 
 use super::protocol::wayland::wl_display::WlDisplay;
 

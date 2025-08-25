@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, os::fd};
 
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
@@ -10,6 +10,111 @@ use crate::{
     protocol_parser::{Arg, Element, Interface, Request},
     wire::{build_enum, build_event, build_request},
 };
+
+fn build_request_method_body(
+    request: &Request,
+    new_id_arg: &Option<&Arg>,
+    return_type: &TokenStream,
+) -> TokenStream {
+    let new_id_generic = matches!(
+        new_id_arg,
+        Some(Arg {
+            interface: None,
+            ..
+        })
+    );
+
+    // Create the new ID if needed, statically or dynamically typed
+    let version = if new_id_generic {
+        quote! {
+            version
+        }
+    } else {
+        quote! {
+            self.0.version()
+        }
+    };
+    let new_id = if new_id_generic {
+        quote! {
+            let interface = <#return_type as denali_utils::Interface>::INTERFACE;
+            let new_id = denali_utils::wire::serde::DynamicallyTypedNewId {
+                interface: denali_utils::wire::serde::String::from(interface),
+                version,
+                id,
+            };
+        }
+    } else {
+        quote! {
+            let new_id = id;
+        }
+    };
+
+    // Only return the new object if there is a new_id argument
+    let return_expr = if new_id_arg.is_some() {
+        quote! {
+            new_obj
+        }
+    } else {
+        quote! {()}
+    };
+
+    let create_obj = if new_id_arg.is_some() {
+        //TODO: AAAHAHAH
+        quote! {
+            let version = #version;
+            let new_obj: #return_type = self.0.create_object(version).unwrap();
+            let id = denali_utils::Object::id(&new_obj);
+
+            #new_id
+        }
+    } else {
+        quote! {}
+    };
+
+    // Build the request args type
+    let request_struct = build_ident(&format!("{}Request", request.name), Case::Pascal);
+
+    // Arguments that can be directly passed into the request unmodified.
+    // New IDs and FDs need special handling, as FDs are encoded differently and new IDs aren't passed by the user.
+    let passthrough_args = request
+        .args
+        .iter()
+        .filter(|arg| arg.type_ != "new_id" && arg.type_ != "fd")
+        .map(|arg| {
+            let name = build_ident(&arg.name, Case::Snake);
+            quote! { #name }
+        });
+    let fd_args = request
+        .args
+        .iter()
+        .filter(|arg| arg.type_ == "fd")
+        .map(|arg| {
+            let name = build_ident(&arg.name, Case::Snake);
+            quote! { #name: () }
+        });
+    let new_id_arg = if let Some(new_id_arg) = new_id_arg {
+        let name = build_ident(&new_id_arg.name, Case::Snake);
+        quote! { #name: new_id }
+    } else {
+        quote! {}
+    };
+
+    let create_request = quote! {
+        let request = #request_struct {
+            #(#passthrough_args,)*
+            #(#fd_args,)*
+            #new_id_arg
+        };
+    };
+
+    quote! {
+        #create_obj
+
+        #create_request
+
+        Ok(#return_expr)
+    }
+}
 
 pub fn build_request_method(
     request: &Request,
@@ -47,13 +152,6 @@ pub fn build_request_method(
         .collect::<Vec<_>>();
 
     let new_id_arg = request.args.iter().find(|arg| arg.type_ == "new_id");
-    let new_id_generic = matches!(
-        new_id_arg,
-        Some(Arg {
-            interface: None,
-            ..
-        })
-    );
 
     let (generic, ret) = match new_id_arg {
         Some(Arg {
@@ -83,48 +181,7 @@ pub fn build_request_method(
         None => (quote! {}, quote! {()}),
     };
 
-    let version = if new_id_generic {
-        quote! {
-            version
-        }
-    } else {
-        quote! {
-            self.0.version()
-        }
-    };
-    let new_id = if new_id_generic {
-        quote! {
-            let interface = <#ret as denali_utils::Interface>::INTERFACE;
-            let new_id = denali_utils::wire::serde::DynamicallyTypedNewId {
-                interface: denali_utils::wire::serde::String::from(interface),
-                version,
-                id,
-            };
-        }
-    } else {
-        quote! {
-            let new_id = id;
-        }
-    };
-    let create_obj = if new_id_arg.is_some() {
-        //TODO: AAAHAHAH
-        quote! {
-            let version = #version;
-            let new_obj: #ret = self.0.create_object(version).unwrap();
-            let id = denali_utils::Object::id(&new_obj);
-
-            #new_id
-        }
-    } else {
-        quote! {}
-    };
-    let return_expr = if new_id_arg.is_some() {
-        quote! {
-            new_obj
-        }
-    } else {
-        quote! {()}
-    };
+    let body = build_request_method_body(request, &new_id_arg, &ret);
 
     quote! {
         #doc
@@ -132,11 +189,7 @@ pub fn build_request_method(
         ///
         /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
         pub fn #try_name #generic (#self_, #(#args),*) -> Result<#ret, denali_utils::wire::serde::SerdeError> {
-            #create_obj
-
-            //TODO Serialize and send the request...
-
-            Ok(#return_expr)
+            #body
         }
         #doc
         pub fn #name #generic (#self_, #(#args),*) -> #ret {
