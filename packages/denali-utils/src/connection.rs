@@ -14,9 +14,92 @@ use crate::wire::serde::{Decode, MessageHeader, SerdeError};
 
 struct SendSocket(UnixSeqpacket);
 
+impl SendSocket {
+    /// Sends data along with file descriptors to the Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if sending the message fails.
+    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
+    pub async fn send_with_ancillary<'a>(
+        &self,
+        buf: &[u8],
+        fds: &[BorrowedFd<'a>],
+    ) -> Result<(), SendSocketError> {
+        let buffer = IoSlice::new(buf);
+        let mut ancillary_buffer = [0; 128];
+        let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
+        ancillary
+            .add_fds(fds)
+            .map_err(SendSocketError::AddFdsFailed)?;
+
+        while let Err(err) = self
+            .0
+            .send_vectored_with_ancillary(&[buffer], &mut ancillary)
+            .await
+        {
+            match err.kind() {
+                ErrorKind::Interrupted => {}
+                _ => return Err(SendSocketError::IoError(err)),
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl From<UnixSeqpacket> for SendSocket {
+    fn from(value: UnixSeqpacket) -> Self {
+        Self(value)
+    }
+}
+
+struct RecvSocket(UnixSeqpacket);
+
 impl From<UnixSeqpacket> for RecvSocket {
     fn from(value: UnixSeqpacket) -> Self {
         Self(value)
+    }
+}
+
+impl RecvSocket {
+    pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
+        let mut buf = [0u8; 8];
+        self.0
+            .recv(&mut buf)
+            .await
+            .map_err(RecvSocketError::IoError)?;
+        Ok(MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)?)
+    }
+
+    /// Receives data along with file descriptors from the Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if receiving the message fails.
+    /// See [UnixSeqpacket::recv_vectored_with_ancillary] for more details.
+    pub async fn recv_with_ancillary(
+        &self,
+        buf: &mut [u8],
+        fds: &mut [OwnedFd],
+    ) -> Result<usize, ConnectionError> {
+        let buffer = IoSliceMut::new(buf);
+        let mut ancillary_buffer = [0; 128];
+        let (bytes_read, ancillary_reader) = self
+            .0
+            .recv_vectored_with_ancillary(&mut [buffer], &mut ancillary_buffer[..])
+            .await
+            .unwrap();
+
+        for res in ancillary_reader.into_messages() {
+            if let OwnedAncillaryMessage::FileDescriptors(received_fds) = res {
+                for (dst, src) in fds.iter_mut().zip(received_fds) {
+                    *dst = src;
+                }
+            }
+        }
+
+        Ok(bytes_read)
     }
 }
 
@@ -63,101 +146,18 @@ impl Connection {
     }
 }
 
-impl SendSocket {
-    /// Sends data along with file descriptors to the Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if sending the message fails.
-    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
-    pub async fn send_with_ancillary<'a>(
-        &self,
-        buf: &[u8],
-        fds: &[BorrowedFd<'a>],
-    ) -> Result<(), SendSocketError> {
-        let buffer = IoSlice::new(buf);
-        let mut ancillary_buffer = [0; 128];
-        let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
-        ancillary
-            .add_fds(fds)
-            .map_err(SendSocketError::AddFdsFailed)?;
-
-        while let Err(err) = self
-            .0
-            .send_vectored_with_ancillary(&[buffer], &mut ancillary)
-            .await
-        {
-            match err.kind() {
-                ErrorKind::Interrupted => {}
-                _ => return Err(ConnectionError::IoError(err)),
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl From<UnixSeqpacket> for SendSocket {
-    fn from(value: UnixSeqpacket) -> Self {
-        Self(value)
-    }
+#[derive(Debug, Error)]
+enum RecvSocketError {
+    #[error("Failed to decode header buffer.")]
+    DecodeHeaderError(#[from] SerdeError),
+    #[error("IO operation failed.")]
+    IoError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]
 enum SendSocketError {
     #[error("Failed to add fds to ancillary buffer")]
     AddFdsFailed(#[from] AddControlMessageError),
-    #[error("IO operation failed.")]
-    IoError(#[from] std::io::Error),
-}
-
-struct RecvSocket(UnixSeqpacket);
-
-impl RecvSocket {
-    pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
-        let mut buf = [0u8; 8];
-        self.0
-            .recv(&mut buf)
-            .await
-            .map_err(RecvSocketError::IoError)?;
-        Ok(MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)?)
-    }
-
-    /// Receives data along with file descriptors from the Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if receiving the message fails.
-    /// See [UnixSeqpacket::recv_vectored_with_ancillary] for more details.
-    pub async fn recv_with_ancillary(
-        &self,
-        buf: &mut [u8],
-        fds: &mut [OwnedFd],
-    ) -> Result<usize, ConnectionError> {
-        let buffer = IoSliceMut::new(buf);
-        let mut ancillary_buffer = [0; 128];
-        let (bytes_read, ancillary_reader) = self
-            .0
-            .recv_vectored_with_ancillary(&mut [buffer], &mut ancillary_buffer[..])
-            .await
-            .unwrap();
-
-        for res in ancillary_reader.into_messages() {
-            if let OwnedAncillaryMessage::FileDescriptors(received_fds) = res {
-                for (dst, src) in fds.iter_mut().zip(received_fds) {
-                    *dst = src;
-                }
-            }
-        }
-
-        Ok(bytes_read)
-    }
-}
-
-#[derive(Debug, Error)]
-enum RecvSocketError {
-    #[error("Failed to decode header buffer.")]
-    DecodeHeaderError(#[from] SerdeError),
     #[error("IO operation failed.")]
     IoError(#[from] std::io::Error),
 }
