@@ -117,6 +117,7 @@ fn build_request_method_body(
 
         denali_core::wire::encode_message(&request, object_id, opcode, &mut buffer)?;
 
+        println!("Sending request: {:?}, fds: {:?}", &buffer, &fds);
 
         self.send_request(denali_core::proxy::RequestMessage { fds, buffer });
     };
