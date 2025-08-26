@@ -1,10 +1,12 @@
+use std::os::fd::RawFd;
+
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::id_manager::{IdManager, IdManagerError};
 
 #[derive(Debug, Clone)]
 pub struct RequestMessage {
-    pub fds: Vec<std::os::unix::io::RawFd>,
+    pub fds: Vec<RawFd>,
     pub buffer: Vec<u8>,
 }
 
@@ -18,7 +20,7 @@ pub struct Proxy {
 
 impl Proxy {
     /// Get the unique ID of this proxy.
-    #[must_use] 
+    #[must_use]
     pub const fn id(&self) -> u32 {
         self.id
     }
@@ -30,9 +32,9 @@ impl Proxy {
     }
 
     /// Create a new proxy object with a unique ID allocated from the given IdManager.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function can error if [IdManager::alloc_id] fails to allocate a new ID.
     pub fn new(
         version: u32,
@@ -51,7 +53,7 @@ impl Proxy {
     /// Create a new object of the given interface type.
     ///
     /// # Errors
-    /// 
+    ///
     /// This function can error if [IdManager::alloc_id] fails to allocate a new ID.
     pub fn create_object<T: super::Interface>(&self, version: u32) -> Result<T, IdManagerError> {
         Self::new(

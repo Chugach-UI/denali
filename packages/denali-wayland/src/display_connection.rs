@@ -13,11 +13,9 @@ pub struct DisplayConnection {
 impl DisplayConnection {
     pub async fn new() -> Result<Self, DisplayConnectionError> {
         let id_manager = IdManager::default();
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        let display = WlDisplay::from(Proxy::new(1, id_manager.clone(), sender).unwrap());
-
         let connection = Connection::new().await.unwrap();
+        let display =
+            WlDisplay::from(Proxy::new(1, id_manager.clone(), connection.mpsc_sender()).unwrap());
 
         Ok(Self {
             id_manager,

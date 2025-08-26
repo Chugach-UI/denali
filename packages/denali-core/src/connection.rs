@@ -21,6 +21,7 @@ use crate::{
 pub struct Connection {
     recv: RecvSocket,
     mpsc_send: mpsc::UnboundedSender<RequestMessage>,
+    worker_handle: tokio::task::JoinHandle<()>,
 }
 
 impl Connection {
@@ -57,16 +58,19 @@ impl Connection {
 
         let (mpsc_send, mut mpsc_recv) = mpsc::unbounded_channel::<RequestMessage>();
 
-        tokio::task::spawn(async move {
-            loop {
-                let msg = mpsc_recv.recv().await.unwrap();
+        let worker_handle = tokio::task::spawn(async move {
+            while let Some(msg) = mpsc_recv.recv().await {
                 send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
                     .await
                     .unwrap();
             }
         });
 
-        Ok(Self { recv, mpsc_send })
+        Ok(Self {
+            recv,
+            mpsc_send,
+            worker_handle,
+        })
     }
 
     pub fn mpsc_sender(&self) -> UnboundedSender<RequestMessage> {
