@@ -7,7 +7,7 @@ use super::protocol::wayland::wl_display::WlDisplay;
 pub struct DisplayConnection {
     id_manager: IdManager,
     display: WlDisplay,
-    pub connection: Connection,
+    connection: Connection,
 }
 
 impl DisplayConnection {

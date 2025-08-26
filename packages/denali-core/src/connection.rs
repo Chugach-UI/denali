@@ -151,7 +151,7 @@ enum SendSocketError {
     IoError(#[from] std::io::Error),
 }
 
-pub struct RecvSocket(pub UnixSeqpacket);
+pub struct RecvSocket(UnixSeqpacket);
 
 impl RecvSocket {
     pub async fn read(&self, buf: &mut [u8]) {
