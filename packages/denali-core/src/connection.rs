@@ -1,16 +1,88 @@
 use std::{
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
-    os::fd::{BorrowedFd, IntoRawFd, OwnedFd},
+    os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd},
     path::PathBuf,
 };
+
 use thiserror::Error;
+use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_seqpacket::{
     UnixSeqpacket,
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
 
-use crate::wire::serde::{Decode, MessageHeader, SerdeError};
+use crate::{
+    proxy::RequestMessage,
+    wire::serde::{Decode, MessageHeader, SerdeError},
+};
+
+/// A connection to a Wayland server.
+pub struct Connection {
+    recv: RecvSocket,
+    mpsc_send: mpsc::UnboundedSender<RequestMessage>,
+}
+
+impl Connection {
+    /// Creates a new Connection to a Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
+    pub async fn new() -> Result<Self, ConnectionError> {
+        let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".to_string());
+        let mut wayland_display = PathBuf::from(wayland_display);
+        if !wayland_display.is_absolute() {
+            let xdg_runtime_dir =
+                env::var("XDG_RUNTIME_DIR").map_err(|_| ConnectionError::NoXdgRuntimeDir)?;
+            let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
+            wayland_display = xdg_runtime_dir.join(wayland_display);
+        }
+
+        let stream = std::os::unix::net::UnixStream::connect(wayland_display)
+            .map_err(ConnectionError::ConnectError)?;
+
+        let stream_dup = stream.try_clone().map_err(ConnectionError::CloneError)?;
+
+        let send: SendSocket;
+        let recv: RecvSocket;
+        unsafe {
+            send = UnixSeqpacket::from_raw_fd(stream.into_raw_fd())
+                .unwrap()
+                .into();
+            recv = UnixSeqpacket::from_raw_fd(stream_dup.into_raw_fd())
+                .unwrap()
+                .into();
+        }
+
+        let (mpsc_send, mut mpsc_recv) = mpsc::unbounded_channel::<RequestMessage>();
+
+        tokio::task::spawn(async move {
+            loop {
+                let msg = mpsc_recv.recv().await.unwrap();
+                send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        Ok(Self { recv, mpsc_send })
+    }
+
+    pub fn mpsc_sender(&self) -> UnboundedSender<RequestMessage> {
+        self.mpsc_send.clone()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
+    NoXdgRuntimeDir,
+    #[error("Could not connect to wayland display.")]
+    ConnectError(std::io::Error),
+    #[error("Could not clone the stream.")]
+    CloneError(std::io::Error),
+}
 
 struct SendSocket(UnixSeqpacket);
 
@@ -21,16 +93,21 @@ impl SendSocket {
     ///
     /// This function will return an error if sending the message fails.
     /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
-    pub async fn send_with_ancillary<'a>(
+    pub async fn send_with_ancillary(
         &self,
         buf: &[u8],
-        fds: &[BorrowedFd<'a>],
+        fds: &[RawFd],
     ) -> Result<(), SendSocketError> {
         let buffer = IoSlice::new(buf);
         let mut ancillary_buffer = [0; 128];
         let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
+        let fds = fds
+            .iter()
+            .map(|fd| unsafe { BorrowedFd::borrow_raw(*fd) })
+            .collect::<Vec<_>>();
+
         ancillary
-            .add_fds(fds)
+            .add_fds(&fds)
             .map_err(SendSocketError::AddFdsFailed)?;
 
         while let Err(err) = self
@@ -54,13 +131,15 @@ impl From<UnixSeqpacket> for SendSocket {
     }
 }
 
-struct RecvSocket(UnixSeqpacket);
-
-impl From<UnixSeqpacket> for RecvSocket {
-    fn from(value: UnixSeqpacket) -> Self {
-        Self(value)
-    }
+#[derive(Debug, Error)]
+enum SendSocketError {
+    #[error("Failed to add fds to ancillary buffer")]
+    AddFdsFailed(#[from] AddControlMessageError),
+    #[error("IO operation failed.")]
+    IoError(#[from] std::io::Error),
 }
+
+struct RecvSocket(UnixSeqpacket);
 
 impl RecvSocket {
     pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
@@ -103,46 +182,9 @@ impl RecvSocket {
     }
 }
 
-/// A connection to a Wayland server.
-pub struct Connection {
-    send: SendSocket,
-    recv: RecvSocket,
-}
-
-impl Connection {
-    /// Creates a new Connection to a Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
-    pub async fn new() -> Result<Self, ConnectionError> {
-        let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".to_string());
-        let mut wayland_display = PathBuf::from(wayland_display);
-        if !wayland_display.is_absolute() {
-            let xdg_runtime_dir =
-                env::var("XDG_RUNTIME_DIR").map_err(|_| ConnectionError::NoXdgRuntimeDir)?;
-            let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
-            wayland_display = xdg_runtime_dir.join(wayland_display);
-        }
-
-        let stream = std::os::unix::net::UnixStream::connect(wayland_display)
-            .map_err(ConnectionError::ConnectError)?;
-
-        let stream_dup = stream.try_clone().map_err(ConnectionError::CloneError)?;
-
-        let send: SendSocket;
-        let recv: RecvSocket;
-
-        unsafe {
-            send = UnixSeqpacket::from_raw_fd(stream.into_raw_fd())
-                .unwrap()
-                .into();
-            recv = UnixSeqpacket::from_raw_fd(stream_dup.into_raw_fd())
-                .unwrap()
-                .into();
-        }
-
-        Ok(Self { send, recv })
+impl From<UnixSeqpacket> for RecvSocket {
+    fn from(value: UnixSeqpacket) -> Self {
+        Self(value)
     }
 }
 
@@ -152,22 +194,4 @@ enum RecvSocketError {
     DecodeHeaderError(#[from] SerdeError),
     #[error("IO operation failed.")]
     IoError(#[from] std::io::Error),
-}
-
-#[derive(Debug, Error)]
-enum SendSocketError {
-    #[error("Failed to add fds to ancillary buffer")]
-    AddFdsFailed(#[from] AddControlMessageError),
-    #[error("IO operation failed.")]
-    IoError(#[from] std::io::Error),
-}
-
-#[derive(Debug, Error)]
-pub enum ConnectionError {
-    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
-    NoXdgRuntimeDir,
-    #[error("Could not connect to wayland display.")]
-    ConnectError(std::io::Error),
-    #[error("Could not clone the stream.")]
-    CloneError(std::io::Error),
 }
