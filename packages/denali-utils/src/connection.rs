@@ -1,17 +1,20 @@
 use std::{
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
-    os::fd::{BorrowedFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd, BorrowedFd, IntoRawFd, OwnedFd},
     path::PathBuf,
 };
 use thiserror::Error;
 use tokio_seqpacket::{
     UnixSeqpacket,
-    ancillary::{AncillaryMessageWriter, OwnedAncillaryMessage},
+    ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
 
+use crate::wire::serde::{Decode, MessageHeader, SerdeError};
+
 pub struct Connection {
-    stream: UnixSeqpacket,
+    send: SendSocket,
+    recv: RecvSocket,
 }
 
 impl Connection {
@@ -25,35 +28,91 @@ impl Connection {
             wayland_display = xdg_runtime_dir.join(wayland_display);
         }
 
-        let stream = UnixSeqpacket::connect(wayland_display)
-            .await
+        let stream = std::os::unix::net::UnixStream::connect(wayland_display)
             .map_err(ConnectionError::ConnectError)?;
 
-        Ok(Self { stream })
-    }
+        let stream_dup = stream.try_clone().map_err(ConnectionError::CloneError)?;
 
+        let send: SendSocket;
+        let recv: RecvSocket;
+
+        unsafe {
+            send = UnixSeqpacket::from_raw_fd(stream.into_raw_fd())
+                .unwrap()
+                .into();
+            recv = UnixSeqpacket::from_raw_fd(stream_dup.into_raw_fd())
+                .unwrap()
+                .into();
+        }
+
+        Ok(Self { send, recv })
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
+    NoXdgRuntimeDir,
+    #[error("Could not connect to wayland display.")]
+    ConnectError(std::io::Error),
+    #[error("Could not clone the stream.")]
+    CloneError(std::io::Error),
+}
+
+struct SendSocket(UnixSeqpacket);
+
+impl SendSocket {
     pub async fn send_with_ancillary<'a>(
         &self,
         buf: &[u8],
         fds: &[BorrowedFd<'a>],
-    ) -> Result<(), ConnectionError> {
+    ) -> Result<(), SendSocketError> {
         let buffer = IoSlice::new(buf);
         let mut ancillary_buffer = [0; 128];
         let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
-        ancillary.add_fds(fds).unwrap();
+        ancillary
+            .add_fds(fds)
+            .map_err(SendSocketError::AddFdsFailed)?;
 
         while let Err(err) = self
-            .stream
+            .0
             .send_vectored_with_ancillary(&[buffer], &mut ancillary)
             .await
         {
             match err.kind() {
                 ErrorKind::Interrupted => continue,
-                _ => return Err(ConnectionError::SendError(err)),
+                _ => return Err(SendSocketError::IoError(err)),
             }
         }
 
         Ok(())
+    }
+}
+
+impl From<UnixSeqpacket> for SendSocket {
+    fn from(value: UnixSeqpacket) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Error)]
+enum SendSocketError {
+    #[error("Failed to add fds to ancillary buffer")]
+    AddFdsFailed(#[from] AddControlMessageError),
+    #[error("IO operation failed.")]
+    IoError(#[from] std::io::Error),
+}
+
+struct RecvSocket(UnixSeqpacket);
+
+impl RecvSocket {
+    pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
+        let mut buf = [0u8; 8];
+        self.0
+            .recv(&mut buf)
+            .await
+            .map_err(RecvSocketError::IoError)?;
+        Ok(MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)?)
     }
 
     pub async fn recv_with_ancillary(
@@ -64,7 +123,7 @@ impl Connection {
         let buffer = IoSliceMut::new(buf);
         let mut ancillary_buffer = [0; 128];
         let (bytes_read, ancillary_reader) = self
-            .stream
+            .0
             .recv_vectored_with_ancillary(&mut [buffer], &mut ancillary_buffer[..])
             .await
             .unwrap();
@@ -81,12 +140,16 @@ impl Connection {
     }
 }
 
+impl From<UnixSeqpacket> for RecvSocket {
+    fn from(value: UnixSeqpacket) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Debug, Error)]
-pub enum ConnectionError {
-    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
-    NoXdgRuntimeDir,
-    #[error("Could not connect to wayland display.")]
-    ConnectError(std::io::Error),
-    #[error("Failed to sendmsg.")]
-    SendError(std::io::Error),
+enum RecvSocketError {
+    #[error("Failed to decode header buffer.")]
+    DecodeHeaderError(#[from] SerdeError),
+    #[error("IO operation failed.")]
+    IoError(#[from] std::io::Error),
 }
