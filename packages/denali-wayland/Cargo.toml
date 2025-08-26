@@ -13,3 +13,6 @@ tokio = { workspace = true }
 flate2 = "1.1.2"
 reqwest = { version = "0.12.23", features = ["blocking"] }
 tar = "0.4.44"
+
+[lints]
+workspace = true

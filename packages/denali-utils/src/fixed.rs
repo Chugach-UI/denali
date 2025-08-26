@@ -1,3 +1,6 @@
+#![allow(clippy::cast_precision_loss)]
+
+/// A fixed point integer with 8 bits of fractional precision.
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Fixed(pub(crate) i32);
@@ -38,7 +41,7 @@ impl std::ops::Mul for Fixed {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        Fixed(((self.0 as i64 * rhs.0 as i64) >> 8) as i32)
+        Fixed(((i64::from(self.0) * i64::from(rhs.0)) >> 8) as i32)
     }
 }
 impl std::ops::MulAssign for Fixed {
@@ -51,7 +54,7 @@ impl std::ops::Div for Fixed {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Fixed((((self.0 as i64) << 8) / rhs.0 as i64) as i32)
+        Fixed(((i64::from(self.0) << 8) / i64::from(rhs.0)) as i32)
     }
 }
 impl std::ops::DivAssign for Fixed {
@@ -82,7 +85,7 @@ impl From<Fixed> for f32 {
 
 impl From<Fixed> for f64 {
     fn from(value: Fixed) -> Self {
-        value.0 as f64 / 256.0
+        f64::from(value.0) / 256.0
     }
 }
 
@@ -106,13 +109,13 @@ impl From<Fixed> for i32 {
 
 impl From<Fixed> for i64 {
     fn from(value: Fixed) -> Self {
-        (value.0 / 256) as i64
+        i64::from(value.0 / 256)
     }
 }
 
 impl From<Fixed> for i128 {
     fn from(value: Fixed) -> Self {
-        (value.0 / 256) as i128
+        i128::from(value.0 / 256)
     }
 }
 
@@ -159,6 +162,8 @@ impl From<Fixed> for usize {
 }
 
 impl Fixed {
+    #[must_use] 
+    /// Returns the absolute value of the fixed point number.
     pub const fn abs(self) -> Fixed {
         Fixed(self.0.abs())
     }

@@ -42,24 +42,24 @@ impl Message<'_> {
         }
     }
 
-    fn description(&self) -> &Option<Description> {
+    const fn description(&self) -> Option<&Description> {
         match self {
-            Message::Event(event) => &event.description,
-            Message::Request(request) => &request.description,
+            Message::Event(event) => event.description.as_ref(),
+            Message::Request(request) => request.description.as_ref(),
         }
     }
 
-    fn since(&self) -> &Option<String> {
+    const fn since(&self) -> Option<&String> {
         match self {
-            Message::Event(event) => &event.since,
-            Message::Request(request) => &request.since,
+            Message::Event(event) => event.since.as_ref(),
+            Message::Request(request) => request.since.as_ref(),
         }
     }
 
-    fn deprecated_since(&self) -> &Option<String> {
+    const fn deprecated_since(&self) -> Option<&String> {
         match self {
-            Message::Event(event) => &event.deprecated_since,
-            Message::Request(request) => &request.deprecated_since,
+            Message::Event(event) => event.deprecated_since.as_ref(),
+            Message::Request(request) => request.deprecated_since.as_ref(),
         }
     }
 
@@ -70,13 +70,14 @@ impl Message<'_> {
         }
     }
 
-    fn is_request(&self) -> bool {
+    const fn is_request(&self) -> bool {
         matches!(self, Message::Request(_))
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_message(
-    message: &Message,
+    message: &Message<'_>,
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
@@ -87,7 +88,7 @@ fn build_message(
     };
 
     let mut opcode: u16 = 0;
-    for elem in interface.elements.iter() {
+    for elem in &interface.elements {
         match elem {
             crate::protocol_parser::Element::Request(req) if message.is_request() => {
                 if req.name == message.name() {
@@ -109,7 +110,7 @@ fn build_message(
     let name = format_ident!("{}{suffix}", message.name().to_case(Case::Pascal));
     let docs = build_documentation(
         message.description(),
-        &None,
+        None,
         message.since(),
         message.deprecated_since(),
     );
@@ -125,7 +126,7 @@ fn build_message(
         .iter()
         .map(|arg| {
             let arg_name = build_ident(&arg.name, Case::Snake);
-            let arg_docs = build_documentation(&arg.description, &arg.summary, &None, &None);
+            let arg_docs = build_documentation(arg.description.as_ref(), arg.summary.as_ref(), None, None);
             let arg_type = expand_argument_type(arg, interface_map, Some("'a"));
             quote! {
                 #arg_docs

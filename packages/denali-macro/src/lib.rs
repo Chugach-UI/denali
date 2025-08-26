@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 mod helpers;
 mod interface;
 mod protocol_parser;
@@ -17,7 +19,7 @@ use walkdir::WalkDir;
 pub fn wayland_protocols(input: TokenStream) -> TokenStream {
     let expr = syn::parse_macro_input!(input as syn::LitStr);
 
-    match gen_protocols_inner(expr) {
+    match gen_protocols_inner(&expr) {
         Ok(stream) => stream,
         Err(err) => quote! {
             compile_error!("Failed to generate Wayland protocol: {err}", err = #err);
@@ -26,7 +28,7 @@ pub fn wayland_protocols(input: TokenStream) -> TokenStream {
     }
 }
 
-fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
+fn gen_protocols_inner(expr: &syn::LitStr) -> Result<TokenStream, String> {
     let path: OsString = expr.value().into();
     let path = if let Some(manifest_dir) = std::env::var_os("CARGO_MANIFEST_DIR") {
         let mut buf = PathBuf::from(manifest_dir);
@@ -50,7 +52,7 @@ fn gen_protocols_inner(expr: syn::LitStr) -> Result<TokenStream, String> {
     let modules = protocols.into_iter().map(|protocol| {
         let mod_name = build_ident(&protocol.name, Case::Snake);
 
-        let desc = helpers::build_documentation(&protocol.description, &None, &None, &None);
+        let desc = helpers::build_documentation(protocol.description.as_ref(), None, None, None);
 
         let interfaces = protocol
             .interfaces
@@ -82,7 +84,7 @@ fn collect_files(path: &PathBuf) -> Result<Vec<File>, String> {
         for path in WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
-            .map(|e| e.into_path())
+            .map(walkdir::DirEntry::into_path)
             .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "xml"))
         {
             let file = File::open(&path).map_err(|_| "Failed to read Wayland protocol file: {}")?;
@@ -100,7 +102,7 @@ fn build_interface_map(protocols: &[Protocol]) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
 
     for protocol in protocols {
-        for interface in protocol.interfaces.iter() {
+        for interface in &protocol.interfaces {
             map.insert(interface.name.clone(), protocol.name.clone());
         }
     }

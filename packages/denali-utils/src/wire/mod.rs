@@ -4,20 +4,28 @@ use serde::CompileTimeMessageSize;
 
 pub mod serde;
 
-fn round_up_4(pos: u64) -> u64 {
+const fn round_up_4(pos: u64) -> u64 {
     (pos + 3) & !3
 }
 
+/// A helper for decoding byte buffers from the Wayland wire protocol.
 pub struct MessageDecoder<'a> {
     data: Cursor<&'a [u8]>,
 }
 impl<'a> MessageDecoder<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+    /// Creates a new `MessageDecoder` for the given byte slice.
+    #[must_use] 
+    pub const fn new(data: &'a [u8]) -> Self {
         Self {
             data: Cursor::new(data),
         }
     }
 
+    /// Reads a value of type `T` from the current position in the byte buffer.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
     pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
         let data = &self.data.get_ref()[pos as usize..];
@@ -28,31 +36,43 @@ impl<'a> MessageDecoder<'a> {
         Ok(result)
     }
 
+    /// Sets the current position in the byte buffer.
     #[inline]
-    pub fn set_position(&mut self, pos: u64) {
+    pub const fn set_position(&mut self, pos: u64) {
         self.data.set_position(pos);
     }
+    /// Returns the current position in the byte buffer.
     #[inline]
-    pub fn position(&self) -> u64 {
+    #[must_use] 
+    pub const fn position(&self) -> u64 {
         self.data.position()
     }
 
+    /// Returns a reference to the underlying byte slice.
     #[inline]
-    pub fn get_ref(&self) -> &[u8] {
+    #[must_use]
+    pub const fn get_ref(&self) -> &[u8] {
         self.data.get_ref()
     }
 }
 
+/// A helper for encoding or decoding byte buffers for the Wayland wire protocol.
 pub struct MessageEncoder<'a> {
     data: Cursor<&'a mut [u8]>,
 }
 impl<'a> MessageEncoder<'a> {
-    pub fn new(data: &'a mut [u8]) -> Self {
+    /// Creates a new `MessageEncoder` for the given mutable byte slice.
+    pub const fn new(data: &'a mut [u8]) -> Self {
         Self {
             data: Cursor::new(data),
         }
     }
 
+    /// Reads a value of type `T` from the current position in the byte buffer.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
     pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
         let data = &self.data.get_ref()[pos as usize..];
@@ -62,6 +82,11 @@ impl<'a> MessageEncoder<'a> {
             .set_position(round_up_4(self.data.position() + result.size() as u64));
         Ok(result)
     }
+    /// Writes a value of type `T` to the current position in the byte buffer.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
     pub fn write<T: serde::Encode>(&mut self, value: &T) -> Result<(), serde::SerdeError> {
         let pos = self.position();
         let data = &mut self.data.get_mut()[pos as usize..];
@@ -72,21 +97,31 @@ impl<'a> MessageEncoder<'a> {
         Ok(())
     }
 
+    /// Sets the current position in the byte buffer.
     #[inline]
-    pub fn set_position(&mut self, pos: u64) {
+    pub const fn set_position(&mut self, pos: u64) {
         self.data.set_position(pos);
     }
+    /// Returns the current position in the byte buffer.
     #[inline]
-    pub fn position(&self) -> u64 {
+    #[must_use] 
+    pub const fn position(&self) -> u64 {
         self.data.position()
     }
 
+    /// Returns a reference to the underlying byte slice.
     #[inline]
-    pub fn get_ref(&self) -> &[u8] {
+    #[must_use] 
+    pub const fn get_ref(&self) -> &[u8] {
         self.data.get_ref()
     }
 }
 
+/// Encodes a message with the given object ID and opcode into the provided byte buffer.
+/// 
+/// # Errors
+/// 
+/// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
 pub fn encode_message<T: serde::Encode>(
     message: &T,
     object_id: u32,

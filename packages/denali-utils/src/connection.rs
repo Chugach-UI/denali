@@ -1,7 +1,7 @@
 use std::{
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
-    os::fd::{AsFd, AsRawFd, BorrowedFd, IntoRawFd, OwnedFd},
+    os::fd::{BorrowedFd, IntoRawFd, OwnedFd},
     path::PathBuf,
 };
 use thiserror::Error;
@@ -12,12 +12,26 @@ use tokio_seqpacket::{
 
 use crate::wire::serde::{Decode, MessageHeader, SerdeError};
 
+struct SendSocket(UnixSeqpacket);
+
+impl From<UnixSeqpacket> for RecvSocket {
+    fn from(value: UnixSeqpacket) -> Self {
+        Self(value)
+    }
+}
+
+/// A connection to a Wayland server.
 pub struct Connection {
     send: SendSocket,
     recv: RecvSocket,
 }
 
 impl Connection {
+    /// Creates a new Connection to a Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
     pub async fn new() -> Result<Self, ConnectionError> {
         let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".to_string());
         let mut wayland_display = PathBuf::from(wayland_display);
@@ -49,19 +63,13 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum ConnectionError {
-    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
-    NoXdgRuntimeDir,
-    #[error("Could not connect to wayland display.")]
-    ConnectError(std::io::Error),
-    #[error("Could not clone the stream.")]
-    CloneError(std::io::Error),
-}
-
-struct SendSocket(UnixSeqpacket);
-
 impl SendSocket {
+    /// Sends data along with file descriptors to the Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if sending the message fails.
+    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
     pub async fn send_with_ancillary<'a>(
         &self,
         buf: &[u8],
@@ -80,8 +88,8 @@ impl SendSocket {
             .await
         {
             match err.kind() {
-                ErrorKind::Interrupted => continue,
-                _ => return Err(SendSocketError::IoError(err)),
+                ErrorKind::Interrupted => {}
+                _ => return Err(ConnectionError::IoError(err)),
             }
         }
 
@@ -115,6 +123,12 @@ impl RecvSocket {
         Ok(MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)?)
     }
 
+    /// Receives data along with file descriptors from the Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if receiving the message fails.
+    /// See [UnixSeqpacket::recv_vectored_with_ancillary] for more details.
     pub async fn recv_with_ancillary(
         &self,
         buf: &mut [u8],
@@ -131,18 +145,12 @@ impl RecvSocket {
         for res in ancillary_reader.into_messages() {
             if let OwnedAncillaryMessage::FileDescriptors(received_fds) = res {
                 for (dst, src) in fds.iter_mut().zip(received_fds) {
-                    *dst = src
+                    *dst = src;
                 }
             }
         }
 
         Ok(bytes_read)
-    }
-}
-
-impl From<UnixSeqpacket> for RecvSocket {
-    fn from(value: UnixSeqpacket) -> Self {
-        Self(value)
     }
 }
 
@@ -152,4 +160,14 @@ enum RecvSocketError {
     DecodeHeaderError(#[from] SerdeError),
     #[error("IO operation failed.")]
     IoError(#[from] std::io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
+    NoXdgRuntimeDir,
+    #[error("Could not connect to wayland display.")]
+    ConnectError(std::io::Error),
+    #[error("Could not clone the stream.")]
+    CloneError(std::io::Error),
 }

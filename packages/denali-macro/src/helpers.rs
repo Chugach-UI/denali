@@ -11,29 +11,27 @@ pub fn arg_type_to_rust_type(type_: &str, lifetime: Option<&str>) -> TokenStream
         .map(|l| syn::Lifetime::new(l, Span::call_site()))
         .into_iter();
     match type_ {
-        "uint" => quote! { u32 },
+        "uint" | "object" | "new_id" => quote! { u32 },
         "int" => quote! { i32 },
         "fixed" => quote! { denali_utils::fixed::Fixed },
         "string" => quote! { denali_utils::wire::serde::String #(<#lifetime>)* },
-        "object" => quote! { u32 },
-        "new_id" => quote! { u32 },
         "array" => quote! { denali_utils::wire::serde::Array #(<#lifetime>)* },
         "fd" => quote! { () },
-        _ => panic!("Unknown type: {}", type_),
+        _ => panic!("Unknown type: {type_}"),
     }
 }
 
 pub fn build_documentation(
-    description: &Option<Description>,
-    summary: &Option<String>,
-    since: &Option<String>,
-    deprecated_since: &Option<String>,
+    description: Option<&Description>,
+    summary: Option<&String>,
+    since: Option<&String>,
+    deprecated_since: Option<&String>,
 ) -> TokenStream {
     let description = description
-        .clone()
+        .cloned()
         .or_else(|| {
-            summary.clone().map(|summary| Description {
-                summary,
+            summary.map(|summary| Description {
+                summary: summary.clone(),
                 content: None,
             })
         })
@@ -47,7 +45,6 @@ pub fn build_documentation(
         .collect::<Vec<_>>()
         .join("\n");
     let since = since
-        .clone()
         .map(|since| format!("Since: v{since}"))
         .unwrap_or_default();
 
@@ -76,7 +73,7 @@ const ILLEGAL_IDENTS: [&str; 47] = [
     "virtual", "yield", "try", "gen",
 ];
 
-pub fn build_ident(name: &str, case: Case) -> syn::Ident {
+pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
     let name = name
         .without_boundaries(&[Boundary::LOWER_DIGIT])
         .to_case(case);
@@ -117,7 +114,7 @@ pub fn expand_argument_type(
 
                 quote! { super::super::#protocol::#interface::#ident }
             } else {
-                panic!("Invalid enum path: {}", enum_);
+                panic!("Invalid enum path: {enum_}");
             };
 
             quote! {#path}

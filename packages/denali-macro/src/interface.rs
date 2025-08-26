@@ -13,7 +13,7 @@ use crate::{
 
 fn build_request_method_body(
     request: &Request,
-    new_id_arg: &Option<&Arg>,
+    new_id_arg: Option<&Arg>,
     return_type: &TokenStream,
 ) -> TokenStream {
     let new_id_generic = matches!(
@@ -139,7 +139,7 @@ pub fn build_request_method(
     let try_name = build_ident(&format!("try_{name}"), Case::Snake);
     let name = build_ident(name, Case::Snake);
 
-    let doc = build_documentation(&request.description, &None, &None, &None);
+    let doc = build_documentation(request.description.as_ref(), None, None, None);
 
     let self_ = if request.type_.as_ref().is_some_and(|t| t == "destructor") {
         quote! { self }
@@ -198,7 +198,7 @@ pub fn build_request_method(
         None => (quote! {}, quote! {()}),
     };
 
-    let body = build_request_method_body(request, &new_id_arg, &ret);
+    let body = build_request_method_body(request, new_id_arg, &ret);
 
     quote! {
         #doc
@@ -223,7 +223,7 @@ pub fn build_interface(
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
-    let documentation = build_documentation(&interface.description, &None, &None, &None);
+    let documentation = build_documentation(interface.description.as_ref(), None, None, None);
     let interface_str = interface.name.to_case(Case::Snake);
     let name = build_ident(&interface.name, Case::Pascal);
     let version = interface.version;
@@ -271,7 +271,7 @@ pub fn build_interface_module(
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
     let interface_name = build_ident(&interface.name, Case::Snake);
-    let interface_desc = build_documentation(&interface.description, &None, &None, &None);
+    let interface_desc = build_documentation(interface.description.as_ref(), None, None, None);
     let interface_version = interface.version;
 
     let events = interface.elements.iter().map(|element| match element {

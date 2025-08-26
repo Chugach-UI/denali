@@ -4,6 +4,7 @@ use quote::{format_ident, quote};
 
 use crate::{build_ident, helpers::build_documentation, protocol_parser::Enum};
 
+#[allow(clippy::too_many_lines)]
 pub fn build_enum(enum_: &Enum) -> TokenStream {
     #[derive(PartialEq, Eq)]
     enum EnumInnerType {
@@ -13,7 +14,8 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
 
     let bitfield = enum_.bitfield.unwrap_or(false);
     let name = format_ident!("{}", enum_.name.to_case(Case::Pascal));
-    let description = build_documentation(&enum_.description, &None, &enum_.since, &None);
+    let description =
+        build_documentation(enum_.description.as_ref(), None, enum_.since.as_ref(), None);
 
     let inner_type = if bitfield {
         EnumInnerType::U32
@@ -72,10 +74,10 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         .zip(variant_names.iter().zip(variant_values.iter()))
         .map(|(entry, (name, value))| {
             let desc = build_documentation(
-                &entry.description,
-                &entry.summary,
-                &entry.since,
-                &entry.deprecated_since,
+                entry.description.as_ref(),
+                entry.summary.as_ref(),
+                entry.since.as_ref(),
+                entry.deprecated_since.as_ref(),
             );
 
             if bitfield {
@@ -91,10 +93,33 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
             }
         });
 
-    match bitfield {
-        // Non-bitfield enum case
-        // A regular Rust enum is generated
-        false => quote! {
+    if bitfield {
+        quote! {
+            denali_utils::__bitflags::bitflags! {
+                #description
+                pub struct #name: #type_stream {
+                    #(#variants)*
+                }
+            }
+            impl denali_utils::wire::serde::MessageSize for #name {}
+            impl denali_utils::wire::serde::CompileTimeMessageSize for #name {}
+            impl denali_utils::wire::serde::Decode for #name {
+                fn decode(data: &[u8]) -> Result<Self, denali_utils::wire::serde::SerdeError> {
+                    let mut traverser = denali_utils::wire::MessageDecoder::new(data);
+                    let value = traverser.read::<#type_stream>()?;
+                    Self::from_bits(value).ok_or(denali_utils::wire::serde::SerdeError::InvalidEnumValue)
+                }
+            }
+            impl denali_utils::wire::serde::Encode for #name {
+                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_utils::wire::serde::SerdeError> {
+                    let mut traverser = denali_utils::wire::MessageEncoder::new(data);
+                    traverser.write(&self.bits())?;
+                    Ok(traverser.position() as usize)
+                }
+            }
+        }
+    } else {
+        quote! {
             #[repr(#type_stream)]
             #description
             #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,32 +147,6 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
                     Ok(traverser.position() as usize)
                 }
             }
-        },
-        // Bitfield enum case
-        // The bitflags crate is used to generate a bitflags type
-        true => quote! {
-            denali_utils::__bitflags::bitflags! {
-                #description
-                pub struct #name: #type_stream {
-                    #(#variants)*
-                }
-            }
-            impl denali_utils::wire::serde::MessageSize for #name {}
-            impl denali_utils::wire::serde::CompileTimeMessageSize for #name {}
-            impl denali_utils::wire::serde::Decode for #name {
-                fn decode(data: &[u8]) -> Result<Self, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageDecoder::new(data);
-                    let value = traverser.read::<#type_stream>()?;
-                    Self::from_bits(value).ok_or(denali_utils::wire::serde::SerdeError::InvalidEnumValue)
-                }
-            }
-            impl denali_utils::wire::serde::Encode for #name {
-                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageEncoder::new(data);
-                    traverser.write(&self.bits())?;
-                    Ok(traverser.position() as usize)
-                }
-            }
-        },
+        }
     }
 }

@@ -1,0 +1,15 @@
+[package]
+name = "examples"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+denali-utils = { workspace = true }
+denali-macro = { workspace = true }
+denali-wayland = { workspace = true }
+
+[[example]]
+name = "simple"
+path = "simple.rs"

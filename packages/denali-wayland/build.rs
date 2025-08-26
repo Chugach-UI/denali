@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -17,21 +19,18 @@ pub fn main() {
     let wlr_protocols_commit = lock_lines[2].replace("wlr-protocols=", "");
 
     let wayland_xml_path = format!(
-        "https://gitlab.freedesktop.org/wayland/wayland/-/raw/{}/protocol/wayland.xml",
-        wayland_commit
+        "https://gitlab.freedesktop.org/wayland/wayland/-/raw/{wayland_commit}/protocol/wayland.xml"
     );
     let wayland_protocols_archive_paths: Vec<String> = ["stable", "staging", "unstable", "experimental"]
         .iter()
         .map(|path| {
             format!(
-                "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/{commit}/wayland-protocols-{commit}.tar.gz?path={path}",
-                commit = wayland_protocols_commit
+                "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/{wayland_protocols_commit}/wayland-protocols-{wayland_protocols_commit}.tar.gz?path={path}",
             )
         })
         .collect();
     let wlr_protocols_unstable_archive_path = format!(
-        "https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/archive/{commit}/wlr-protocols-{commit}.tar.gz?path=unstable",
-        commit = wlr_protocols_commit
+        "https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/archive/{wlr_protocols_commit}/wlr-protocols-{wlr_protocols_commit}.tar.gz?path=unstable",
     );
 
     let out_dir = env::var_os("OUT_DIR").unwrap();

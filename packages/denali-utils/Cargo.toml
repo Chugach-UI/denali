@@ -11,3 +11,6 @@ paste = "1.0.15"
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-seqpacket = "0.8.0"
+
+[lints]
+workspace = true
