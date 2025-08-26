@@ -1,9 +1,10 @@
 #![cfg_attr(test, feature(test))]
+#![feature(unix_socket_ancillary_data)]
 
+pub mod connection;
 pub mod fixed;
 pub mod id_manager;
 pub mod proxy;
-pub mod socket;
 pub mod wire;
 
 pub trait Object: From<proxy::Proxy> {
