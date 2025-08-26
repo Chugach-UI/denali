@@ -7,7 +7,7 @@ use super::protocol::wayland::wl_display::WlDisplay;
 pub struct DisplayConnection {
     id_manager: IdManager,
     display: WlDisplay,
-    connection: Connection,
+    pub connection: Connection,
 }
 
 impl DisplayConnection {
@@ -26,6 +26,19 @@ impl DisplayConnection {
 
     pub fn display(&self) -> &WlDisplay {
         &self.display
+    }
+
+    pub async fn get_event(&self) -> Vec<u8> {
+        let head = self.connection.receiver().recv_header().await.unwrap();
+        println!("{head:?}");
+        let size = head.size as usize - 8;
+        let mut buf = vec![0u8; size];
+        self.connection
+            .receiver()
+            .recv_with_ancillary(&mut buf, &mut [])
+            .await
+            .unwrap();
+        buf
     }
 }
 

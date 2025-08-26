@@ -153,6 +153,7 @@ pub trait Encode: MessageSize {
 impl_serde! {
     /// The header of a Wayland message.
     #[repr(C)]
+    #[derive(Debug)]
     pub struct MessageHeader {
         /// The ID of the object the message is for.
         pub object_id: u32,

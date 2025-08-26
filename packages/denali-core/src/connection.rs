@@ -63,7 +63,11 @@ impl Connection {
                 send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
                     .await
                     .unwrap();
+
+                println!("Sent {:?}", msg);
             }
+
+            println!("Worker exiting...");
         });
 
         Ok(Self {
@@ -75,6 +79,10 @@ impl Connection {
 
     pub fn mpsc_sender(&self) -> UnboundedSender<RequestMessage> {
         self.mpsc_send.clone()
+    }
+
+    pub fn receiver(&self) -> &RecvSocket {
+        &self.recv
     }
 }
 
@@ -143,9 +151,13 @@ enum SendSocketError {
     IoError(#[from] std::io::Error),
 }
 
-struct RecvSocket(UnixSeqpacket);
+pub struct RecvSocket(pub UnixSeqpacket);
 
 impl RecvSocket {
+    pub async fn read(&self, buf: &mut [u8]) {
+        self.0.recv(buf).await.unwrap();
+    }
+
     pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
         let mut buf = [0u8; 8];
         self.0
@@ -193,7 +205,7 @@ impl From<UnixSeqpacket> for RecvSocket {
 }
 
 #[derive(Debug, Error)]
-enum RecvSocketError {
+pub enum RecvSocketError {
     #[error("Failed to decode header buffer.")]
     DecodeHeaderError(#[from] SerdeError),
     #[error("IO operation failed.")]
