@@ -44,6 +44,8 @@ macro_rules! ensure_size {
 }
 pub use crate::ensure_size;
 
+use super::pad_to_32_bits;
+
 macro_rules! impl_serde {
     {
         $(#[$attr:meta])*
@@ -210,7 +212,7 @@ pub struct DynamicallyTypedNewId<'a> {
 }
 impl MessageSize for DynamicallyTypedNewId<'_> {
     fn size(&self) -> usize {
-        self.interface.size() + u32::SIZE + ObjectId::SIZE
+        pad_to_32_bits(self.interface.size()) + u32::SIZE + ObjectId::SIZE
     }
 }
 impl Decode for DynamicallyTypedNewId<'_> {
@@ -268,7 +270,7 @@ impl<'a> From<Cow<'a, [u8]>> for Array<'a> {
 
 impl MessageSize for Array<'_> {
     fn size(&self) -> usize {
-        self.data.len() + 4 // 4 bytes for the size of the array
+        pad_to_32_bits(self.data.len()) + 4 // 4 bytes for the size of the array
     }
 }
 
@@ -336,7 +338,7 @@ impl<'a> From<Cow<'a, str>> for String<'a> {
 
 impl MessageSize for String<'_> {
     fn size(&self) -> usize {
-        self.data.len() + 5 // 4 bytes for the size of the string + 1 for the null terminator
+        pad_to_32_bits(self.data.len() + 1) + 4 // 4 bytes for the size of the string + 1 for the null terminator
     }
 }
 
@@ -386,7 +388,7 @@ impl Encode for String<'_> {
 /// Errors that can occur during serialization/deserialization of Wayland wire protocol messages.
 #[derive(Debug, Error)]
 pub enum SerdeError {
-    /// The buffer provided is not long enough to encode/decode the expected type. 
+    /// The buffer provided is not long enough to encode/decode the expected type.
     #[error("The data provided is not long enough to encode/decode the expected type.")]
     InvalidSize,
     /// An IO error occurred while encoding/decoding.

@@ -4,7 +4,9 @@ use serde::CompileTimeMessageSize;
 
 pub mod serde;
 
-const fn round_up_4(pos: u64) -> u64 {
+/// Pads the given position to the next multiple of 4 bytes (32 bits).
+#[must_use]
+pub const fn pad_to_32_bits(pos: usize) -> usize {
     (pos + 3) & !3
 }
 
@@ -14,7 +16,7 @@ pub struct MessageDecoder<'a> {
 }
 impl<'a> MessageDecoder<'a> {
     /// Creates a new `MessageDecoder` for the given byte slice.
-    #[must_use] 
+    #[must_use]
     pub const fn new(data: &'a [u8]) -> Self {
         Self {
             data: Cursor::new(data),
@@ -22,9 +24,9 @@ impl<'a> MessageDecoder<'a> {
     }
 
     /// Reads a value of type `T` from the current position in the byte buffer.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
     pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
@@ -32,7 +34,7 @@ impl<'a> MessageDecoder<'a> {
 
         let result = T::decode(data)?;
         self.data
-            .set_position(round_up_4(self.data.position() + result.size() as u64));
+            .set_position(pad_to_32_bits(self.data.position() as usize + result.size()) as _);
         Ok(result)
     }
 
@@ -43,7 +45,7 @@ impl<'a> MessageDecoder<'a> {
     }
     /// Returns the current position in the byte buffer.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn position(&self) -> u64 {
         self.data.position()
     }
@@ -69,9 +71,9 @@ impl<'a> MessageEncoder<'a> {
     }
 
     /// Reads a value of type `T` from the current position in the byte buffer.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
     pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
@@ -79,13 +81,13 @@ impl<'a> MessageEncoder<'a> {
 
         let result = T::decode(data)?;
         self.data
-            .set_position(round_up_4(self.data.position() + result.size() as u64));
+            .set_position(pad_to_32_bits(self.data.position() as usize + result.size()) as _);
         Ok(result)
     }
     /// Writes a value of type `T` to the current position in the byte buffer.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
     pub fn write<T: serde::Encode>(&mut self, value: &T) -> Result<(), serde::SerdeError> {
         let pos = self.position();
@@ -93,7 +95,7 @@ impl<'a> MessageEncoder<'a> {
 
         value.encode(data)?;
         self.data
-            .set_position(round_up_4(self.data.position() + value.size() as u64));
+            .set_position(pad_to_32_bits(self.data.position() as usize + value.size()) as _);
         Ok(())
     }
 
@@ -104,23 +106,23 @@ impl<'a> MessageEncoder<'a> {
     }
     /// Returns the current position in the byte buffer.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn position(&self) -> u64 {
         self.data.position()
     }
 
     /// Returns a reference to the underlying byte slice.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub const fn get_ref(&self) -> &[u8] {
         self.data.get_ref()
     }
 }
 
 /// Encodes a message with the given object ID and opcode into the provided byte buffer.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
 pub fn encode_message<T: serde::Encode>(
     message: &T,
