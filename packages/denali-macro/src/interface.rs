@@ -36,9 +36,9 @@ fn build_request_method_body(
     };
     let new_id = if new_id_generic {
         quote! {
-            let interface = <#return_type as denali_utils::Interface>::INTERFACE;
-            let new_id = denali_utils::wire::serde::DynamicallyTypedNewId {
-                interface: denali_utils::wire::serde::String::from(interface),
+            let interface = <#return_type as denali_core::Interface>::INTERFACE;
+            let new_id = denali_core::wire::serde::DynamicallyTypedNewId {
+                interface: denali_core::wire::serde::String::from(interface),
                 version,
                 id,
             };
@@ -63,7 +63,7 @@ fn build_request_method_body(
         quote! {
             let version = #version;
             let new_obj: #return_type = self.0.create_object(version).unwrap();
-            let id = denali_utils::Object::id(&new_obj);
+            let id = denali_core::Object::id(&new_obj);
 
             #new_id
         }
@@ -101,7 +101,7 @@ fn build_request_method_body(
     };
 
     let create_request_requirements = quote! {
-        use denali_utils::{wire::serde::{MessageSize, CompileTimeMessageSize}, Object};
+        use denali_core::{wire::serde::{MessageSize, CompileTimeMessageSize}, Object};
 
         let request = #request_struct {
             #(#passthrough_args,)*
@@ -110,15 +110,15 @@ fn build_request_method_body(
         };
         let object_id = self.id();
         let opcode = #request_struct::OPCODE;
-        let size = request.size() + denali_utils::wire::serde::MessageHeader::SIZE;
+        let size = request.size() + denali_core::wire::serde::MessageHeader::SIZE;
 
         let mut buffer = vec![0u8; size];
         let fds: Vec<std::os::fd::RawFd> = vec![#(#fd_args.into_raw_fd(),)*];
 
-        denali_utils::wire::encode_message(&request, object_id, opcode, &mut buffer)?;
+        denali_core::wire::encode_message(&request, object_id, opcode, &mut buffer)?;
 
 
-        self.send_request(denali_utils::proxy::RequestMessage { fds, buffer });
+        self.send_request(denali_core::proxy::RequestMessage { fds, buffer });
     };
 
     quote! {
@@ -191,7 +191,7 @@ pub fn build_request_method(
             args.push(quote! { version: u32 });
             arg_names.push(build_ident("version", Case::Snake));
 
-            let generic = quote! { <T: denali_utils::Interface> };
+            let generic = quote! { <T: denali_core::Interface> };
 
             (generic, quote! { T })
         }
@@ -205,7 +205,7 @@ pub fn build_request_method(
         /// # Errors
         ///
         /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
-        pub fn #try_name #generic (#self_, #(#args),*) -> Result<#ret, denali_utils::wire::serde::SerdeError> {
+        pub fn #try_name #generic (#self_, #(#args),*) -> Result<#ret, denali_core::wire::serde::SerdeError> {
             #body
         }
         #doc
@@ -238,27 +238,27 @@ pub fn build_interface(
 
     quote! {
         #documentation
-        pub struct #name(denali_utils::proxy::Proxy);
+        pub struct #name(denali_core::proxy::Proxy);
 
         impl #name {
             #(#methods)*
         }
 
-        impl From<denali_utils::proxy::Proxy> for #name {
-            fn from(proxy: denali_utils::proxy::Proxy) -> Self {
+        impl From<denali_core::proxy::Proxy> for #name {
+            fn from(proxy: denali_core::proxy::Proxy) -> Self {
                 Self(proxy)
             }
         }
 
-        impl denali_utils::Object for #name {
+        impl denali_core::Object for #name {
             fn id(&self) -> u32 {
                 self.0.id()
             }
-            fn send_request(&self, request: denali_utils::proxy::RequestMessage) {
+            fn send_request(&self, request: denali_core::proxy::RequestMessage) {
                 self.0.send_request(request);
             }
         }
-        impl denali_utils::Interface for #name {
+        impl denali_core::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;

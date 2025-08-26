@@ -167,7 +167,7 @@ fn build_message(
             quote! { #(#arg_types_with_size::SIZE)+* }
         };
         quote! {
-           impl #(<#lifetime>)* denali_utils::wire::serde::CompileTimeMessageSize for #name #(<#lifetime>)* {
+           impl #(<#lifetime>)* denali_core::wire::serde::CompileTimeMessageSize for #name #(<#lifetime>)* {
                const SIZE: usize = #size;
            }
         }
@@ -181,7 +181,7 @@ fn build_message(
         impl #(<#lifetime>)* #name #(<#lifetime>)* {
             #opcode
         }
-        impl #(<#lifetime>)* denali_utils::wire::serde::MessageSize for #name #(<#lifetime>)* {
+        impl #(<#lifetime>)* denali_core::wire::serde::MessageSize for #name #(<#lifetime>)* {
             fn size(&self) -> usize {
                 let mut size = 0;
                 #(
@@ -191,9 +191,9 @@ fn build_message(
             }
         }
         #compile_time_size
-        impl #(<#lifetime>)* denali_utils::wire::serde::Decode for #name #(<#lifetime>)* {
-            fn decode(data: &[u8]) -> Result<Self, denali_utils::wire::serde::SerdeError> {
-                let mut traverser = denali_utils::wire::MessageDecoder::new(data);
+        impl #(<#lifetime>)* denali_core::wire::serde::Decode for #name #(<#lifetime>)* {
+            fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
+                let mut traverser = denali_core::wire::MessageDecoder::new(data);
 
                 #(
                     let #arg_names = traverser.read()?;
@@ -204,9 +204,9 @@ fn build_message(
                 })
             }
         }
-        impl #(<#lifetime>)* denali_utils::wire::serde::Encode for #name #(<#lifetime>)* {
-            fn encode(&self, data: &mut [u8]) -> Result<usize, denali_utils::wire::serde::SerdeError> {
-                let mut traverser = denali_utils::wire::MessageEncoder::new(data);
+        impl #(<#lifetime>)* denali_core::wire::serde::Encode for #name #(<#lifetime>)* {
+            fn encode(&self, data: &mut [u8]) -> Result<usize, denali_core::wire::serde::SerdeError> {
+                let mut traverser = denali_core::wire::MessageEncoder::new(data);
 
                 #(
                     traverser.write(&self.#arg_names)?;

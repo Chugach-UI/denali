@@ -7,7 +7,7 @@ members = [
 
 [workspace.dependencies]
 denali-macro = { path = "packages/denali-macro" }
-denali-utils = { path = "packages/denali-utils" }
+denali-core = { path = "packages/denali-core" }
 denali-wayland = { path = "packages/denali-wayland" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread"] }

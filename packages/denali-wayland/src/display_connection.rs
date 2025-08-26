@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use denali_utils::{connection::Connection, id_manager::IdManager, proxy::Proxy};
+use denali_core::{connection::Connection, id_manager::IdManager, proxy::Proxy};
 
 use super::protocol::wayland::wl_display::WlDisplay;
 

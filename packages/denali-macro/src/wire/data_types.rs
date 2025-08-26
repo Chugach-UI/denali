@@ -95,24 +95,24 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
 
     if bitfield {
         quote! {
-            denali_utils::__bitflags::bitflags! {
+            denali_core::__bitflags::bitflags! {
                 #description
                 pub struct #name: #type_stream {
                     #(#variants)*
                 }
             }
-            impl denali_utils::wire::serde::MessageSize for #name {}
-            impl denali_utils::wire::serde::CompileTimeMessageSize for #name {}
-            impl denali_utils::wire::serde::Decode for #name {
-                fn decode(data: &[u8]) -> Result<Self, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageDecoder::new(data);
+            impl denali_core::wire::serde::MessageSize for #name {}
+            impl denali_core::wire::serde::CompileTimeMessageSize for #name {}
+            impl denali_core::wire::serde::Decode for #name {
+                fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
+                    let mut traverser = denali_core::wire::MessageDecoder::new(data);
                     let value = traverser.read::<#type_stream>()?;
-                    Self::from_bits(value).ok_or(denali_utils::wire::serde::SerdeError::InvalidEnumValue)
+                    Self::from_bits(value).ok_or(denali_core::wire::serde::SerdeError::InvalidEnumValue)
                 }
             }
-            impl denali_utils::wire::serde::Encode for #name {
-                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageEncoder::new(data);
+            impl denali_core::wire::serde::Encode for #name {
+                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_core::wire::serde::SerdeError> {
+                    let mut traverser = denali_core::wire::MessageEncoder::new(data);
                     traverser.write(&self.bits())?;
                     Ok(traverser.position() as usize)
                 }
@@ -126,21 +126,21 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
             pub enum #name {
                 #(#variants)*
             }
-            impl denali_utils::wire::serde::MessageSize for #name {}
-            impl denali_utils::wire::serde::CompileTimeMessageSize for #name {}
-            impl denali_utils::wire::serde::Decode for #name {
-                fn decode(data: &[u8]) -> Result<Self, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageDecoder::new(data);
+            impl denali_core::wire::serde::MessageSize for #name {}
+            impl denali_core::wire::serde::CompileTimeMessageSize for #name {}
+            impl denali_core::wire::serde::Decode for #name {
+                fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
+                    let mut traverser = denali_core::wire::MessageDecoder::new(data);
                     let value = traverser.read::<#type_stream>()?;
                     Ok(match value {
                         #(#variant_values => #name::#variant_names,)*
-                        _ => return Err(denali_utils::wire::serde::SerdeError::InvalidEnumValue),
+                        _ => return Err(denali_core::wire::serde::SerdeError::InvalidEnumValue),
                     })
                 }
             }
-            impl denali_utils::wire::serde::Encode for #name {
-                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_utils::wire::serde::SerdeError> {
-                    let mut traverser = denali_utils::wire::MessageEncoder::new(data);
+            impl denali_core::wire::serde::Encode for #name {
+                fn encode(&self, data: &mut [u8]) -> Result<usize, denali_core::wire::serde::SerdeError> {
+                    let mut traverser = denali_core::wire::MessageEncoder::new(data);
                     match self {
                         #(val @ #name::#variant_names => traverser.write(&(*val as #type_stream))?,)*
                     }

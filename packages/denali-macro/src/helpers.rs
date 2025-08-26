@@ -13,9 +13,9 @@ pub fn arg_type_to_rust_type(type_: &str, lifetime: Option<&str>) -> TokenStream
     match type_ {
         "uint" | "object" | "new_id" => quote! { u32 },
         "int" => quote! { i32 },
-        "fixed" => quote! { denali_utils::fixed::Fixed },
-        "string" => quote! { denali_utils::wire::serde::String #(<#lifetime>)* },
-        "array" => quote! { denali_utils::wire::serde::Array #(<#lifetime>)* },
+        "fixed" => quote! { denali_core::fixed::Fixed },
+        "string" => quote! { denali_core::wire::serde::String #(<#lifetime>)* },
+        "array" => quote! { denali_core::wire::serde::Array #(<#lifetime>)* },
         "fd" => quote! { () },
         _ => panic!("Unknown type: {type_}"),
     }
@@ -124,7 +124,7 @@ pub fn expand_argument_type(
             interface: Some(_),
             ..
         } if type_ == "new_id" => quote! {
-            denali_utils::wire::serde::NewId
+            denali_core::wire::serde::NewId
         },
         Arg { type_, .. } if type_ == "new_id" => {
             let lifetime = match lifetime {
@@ -135,7 +135,7 @@ pub fn expand_argument_type(
                 None => quote! {},
             };
             quote! {
-                denali_utils::wire::serde::DynamicallyTypedNewId #lifetime
+                denali_core::wire::serde::DynamicallyTypedNewId #lifetime
             }
         }
         arg => arg_type_to_rust_type(&arg.type_, lifetime),

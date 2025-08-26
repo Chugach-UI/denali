@@ -6,7 +6,7 @@ publish = false
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-denali-utils = { workspace = true }
+denali-core = { workspace = true }
 denali-macro = { workspace = true }
 denali-wayland = { workspace = true }
 
