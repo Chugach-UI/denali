@@ -1,4 +1,4 @@
-use crossbeam::channel::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::id_manager::{IdManager, IdManagerError};
 
@@ -12,7 +12,7 @@ pub struct Proxy {
     id: u32,
     version: u32,
     id_manager: IdManager,
-    request_sender: Sender<RequestMessage>,
+    request_sender: UnboundedSender<RequestMessage>,
 }
 
 impl Proxy {
@@ -27,7 +27,7 @@ impl Proxy {
     pub fn new(
         version: u32,
         shared_manager: IdManager,
-        request_sender: Sender<RequestMessage>,
+        request_sender: UnboundedSender<RequestMessage>,
     ) -> Result<Self, IdManagerError> {
         let id = shared_manager.alloc_id()?;
         Ok(Self {
