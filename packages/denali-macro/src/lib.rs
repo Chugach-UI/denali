@@ -2,15 +2,15 @@
 
 mod helpers;
 mod interface;
+mod protocol;
 mod protocol_parser;
 mod wire;
 
 use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
 
-use convert_case::Case;
 use helpers::build_ident;
-use interface::build_interface_module;
 use proc_macro::TokenStream;
+use protocol::build_protocol;
 use protocol_parser::Protocol;
 use quote::quote;
 use walkdir::WalkDir;
@@ -49,28 +49,12 @@ fn gen_protocols_inner(expr: &syn::LitStr) -> Result<TokenStream, String> {
 
     let interface_map = build_interface_map(&protocols);
 
-    let modules = protocols.into_iter().map(|protocol| {
-        let mod_name = build_ident(&protocol.name, Case::Snake);
-
-        let desc = helpers::build_documentation(protocol.description.as_ref(), None, None, None);
-
-        let interfaces = protocol
-            .interfaces
-            .iter()
-            .map(|interface| build_interface_module(interface, &interface_map));
-
-        quote! {
-            #desc
-            #[allow(deprecated)]
-            pub mod #mod_name {
-
-                #(#interfaces)*
-            }
-        }
-    });
+    let protocols = protocols
+        .into_iter()
+        .map(|protocol| build_protocol(&protocol, &interface_map));
 
     Ok(quote! {
-        #(#modules)*
+        #(#protocols)*
     }
     .into())
 }

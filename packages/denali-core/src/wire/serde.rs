@@ -153,7 +153,7 @@ pub trait Encode: MessageSize {
 impl_serde! {
     /// The header of a Wayland message.
     #[repr(C)]
-    #[derive(Debug)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct MessageHeader {
         /// The ID of the object the message is for.
         pub object_id: u32,
@@ -203,6 +203,7 @@ pub type ObjectId = u32;
 /// A statically typed new ID.
 pub type NewId = ObjectId;
 /// A dynamically typed new ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicallyTypedNewId<'a> {
     /// The interface name of the new object.
     pub interface: String<'a>,
@@ -242,6 +243,7 @@ impl Encode for DynamicallyTypedNewId<'_> {
 }
 
 /// A dynamically sized array of bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Array<'a> {
     /// The raw byte data of the array.
     pub data: Cow<'a, [u8]>,
@@ -310,6 +312,7 @@ impl Encode for Array<'_> {
 }
 
 /// A dynamically sized UTF-8 string.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct String<'a> {
     /// The UTF-8 string data.
     pub data: Cow<'a, str>,

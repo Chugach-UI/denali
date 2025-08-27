@@ -1,7 +1,7 @@
 #![allow(clippy::cast_precision_loss)]
 
 /// A fixed point integer with 8 bits of fractional precision.
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct Fixed(pub(crate) i32);
 

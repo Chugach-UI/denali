@@ -97,6 +97,7 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         quote! {
             denali_core::__bitflags::bitflags! {
                 #description
+                #[derive(Clone, Copy, Debug, PartialEq, Eq)]
                 pub struct #name: #type_stream {
                     #(#variants)*
                 }

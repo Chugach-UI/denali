@@ -7,9 +7,84 @@ use quote::quote;
 use crate::{
     build_ident,
     helpers::{build_documentation, expand_argument_type},
-    protocol_parser::{Arg, Element, Interface, Request},
+    protocol_parser::{Arg, Element, Event, Interface, Request},
     wire::{build_enum, build_event, build_request},
 };
+
+fn event_needs_lifetime(event: &Event) -> bool {
+    event.args.iter().any(|arg| {
+        matches!(arg.type_.as_str(), "string" | "array")
+            || (arg.type_ == "new_id" && arg.interface.is_none())
+    })
+}
+
+fn build_handler_trait(interface: &Interface, events: &[Event]) -> TokenStream {
+    let methods = events.iter().map(|event| {
+        let method_name = build_ident(&format!("handle_{}", event.name), Case::Snake);
+
+        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
+        let event_struct_name = if event_needs_lifetime(event) {
+            quote! {#event_struct_name<'_>}
+        } else {
+            quote! {#event_struct_name}
+        };
+
+        let interface_ident = build_ident(&interface.name, Case::Pascal);
+        let desc = build_documentation(event.description.as_ref(), None, None, None);
+        quote! {
+            #desc
+            fn #method_name(
+                &mut self,
+                _event: #event_struct_name,
+                object: &#interface_ident
+            ) {}
+        }
+    });
+
+    let trait_ident = build_ident(
+        &format!("Handle{}Events", interface.name.to_case(Case::Pascal)),
+        Case::Pascal,
+    );
+
+    quote! {
+        pub trait #trait_ident {
+            #(#methods)*
+        }
+    }
+}
+
+fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
+    let needs_lifetime = events.iter().any(event_needs_lifetime);
+
+    let lifetime = if needs_lifetime {
+        quote! { <'a> }
+    } else {
+        quote! {}
+    };
+
+    let variants = events.iter().map(|event| {
+        let variant_ident = build_ident(&event.name, Case::Pascal);
+        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
+        let event_struct_name = if event_needs_lifetime(event) {
+            quote! {#event_struct_name<'a>}
+        } else {
+            quote! {#event_struct_name}
+        };
+
+        quote! {
+            #variant_ident(#event_struct_name)
+        }
+    });
+
+    let name = build_ident(&format!("{}Event", interface.name), Case::Pascal);
+
+    quote! {
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum #name #lifetime {
+            #(#variants),*
+        }
+    }
+}
 
 fn build_request_method_body(
     request: &Request,
@@ -237,6 +312,22 @@ pub fn build_interface(
         }
     });
 
+    let events = interface
+        .elements
+        .iter()
+        .cloned()
+        .filter_map(|element| {
+            if let Element::Event(event) = element {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let event_enum = build_event_enum(interface, &events);
+    let handler_trait = build_handler_trait(interface, &events);
+
     quote! {
         #documentation
         pub struct #name(denali_core::proxy::Proxy);
@@ -264,6 +355,9 @@ pub fn build_interface(
 
             const MAX_VERSION: u32 = #version;
         }
+
+        #event_enum
+        #handler_trait
     }
 }
 

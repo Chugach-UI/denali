@@ -175,6 +175,7 @@ fn build_message(
 
     quote! {
         #docs
+        #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct #name #(<#lifetime>)* {
             #(#struct_members)*
         }

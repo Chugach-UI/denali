@@ -32,7 +32,7 @@ pub struct Interface {
     pub elements: Vec<Element>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Element {
     Request(Request),
@@ -40,7 +40,7 @@ pub enum Element {
     Enum(Enum),
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     #[serde(rename = "@name")]
     pub name: String,
@@ -55,7 +55,7 @@ pub struct Request {
     pub args: Vec<Arg>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Event {
     #[serde(rename = "@name")]
     pub name: String,
@@ -70,7 +70,7 @@ pub struct Event {
     pub args: Vec<Arg>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
     #[serde(rename = "@name")]
     pub name: String,
@@ -83,7 +83,7 @@ pub struct Enum {
     pub entries: Vec<Entry>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     #[serde(rename = "@name")]
     pub name: String,
@@ -98,7 +98,7 @@ pub struct Entry {
     pub description: Option<Description>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     #[serde(rename = "@name")]
     pub name: String,
@@ -115,7 +115,7 @@ pub struct Arg {
     pub description: Option<Description>,
 }
 
-#[derive(Deserialize, Default, Debug, Clone)]
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Description {
     #[serde(rename = "@summary")]
     pub summary: String,
