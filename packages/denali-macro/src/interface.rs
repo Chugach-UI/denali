@@ -29,14 +29,13 @@ fn build_handler_trait(interface: &Interface, events: &[Event]) -> TokenStream {
             quote! {#event_struct_name}
         };
 
-        let interface_ident = build_ident(&interface.name, Case::Pascal);
         let desc = build_documentation(event.description.as_ref(), None, None, None);
         quote! {
             #desc
             fn #method_name(
                 &mut self,
                 _event: #event_struct_name,
-                object: &#interface_ident
+                object_id: denali_core::wire::serde::ObjectId,
             ) {}
         }
     });
@@ -75,13 +74,37 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
             #variant_ident(#event_struct_name)
         }
     });
+    let try_decode_opcode_arms = events.iter().enumerate().map(|(i, event)| {
+        let variant_ident = build_ident(&event.name, Case::Pascal);
+        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
+
+        let opcode = i as u16;
+
+        quote! {
+            #opcode => #event_struct_name::decode(data).map(Self::#variant_ident).map_err(Into::into),
+        }
+    });
 
     let name = build_ident(&format!("{}Event", interface.name), Case::Pascal);
+    let interface_ident = build_ident(&interface.name, Case::Pascal);
 
     quote! {
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub enum #name #lifetime {
             #(#variants),*
+        }
+        impl #lifetime denali_core::handler::Message for #name #lifetime {
+            fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
+                use denali_core::{wire::serde::Decode, Interface};
+                if interface >= #interface_ident::INTERFACE {
+                    return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
+                }
+
+                match opcode {
+                    #(#try_decode_opcode_arms)*
+                    _ => Err(denali_core::handler::DecodeMessageError::UnknownOpcode(opcode)),
+                }
+            }
         }
     }
 }

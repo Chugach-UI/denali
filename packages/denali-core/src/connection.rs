@@ -20,7 +20,7 @@ use crate::{
 /// A connection to a Wayland server.
 pub struct Connection {
     recv: RecvSocket,
-    mpsc_send: mpsc::UnboundedSender<RequestMessage>,
+    request_sender: mpsc::UnboundedSender<RequestMessage>,
     worker_handle: tokio::task::JoinHandle<()>,
 }
 
@@ -30,7 +30,7 @@ impl Connection {
     /// # Errors
     ///
     /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
-    pub async fn new() -> Result<Self, ConnectionError> {
+    pub fn new() -> Result<Self, ConnectionError> {
         let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".to_string());
         let mut wayland_display = PathBuf::from(wayland_display);
         if !wayland_display.is_absolute() {
@@ -56,15 +56,15 @@ impl Connection {
                 .into();
         }
 
-        let (mpsc_send, mut mpsc_recv) = mpsc::unbounded_channel::<RequestMessage>();
+        let (request_sender, mut request_receiver) = mpsc::unbounded_channel::<RequestMessage>();
 
         let worker_handle = tokio::task::spawn(async move {
-            while let Some(msg) = mpsc_recv.recv().await {
+            while let Some(msg) = request_receiver.recv().await {
                 send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
                     .await
                     .unwrap();
 
-                println!("Sent {:?}", msg);
+                println!("Sent {msg:?}");
             }
 
             println!("Worker exiting...");
@@ -72,26 +72,34 @@ impl Connection {
 
         Ok(Self {
             recv,
-            mpsc_send,
+            request_sender,
             worker_handle,
         })
     }
 
-    pub fn mpsc_sender(&self) -> UnboundedSender<RequestMessage> {
-        self.mpsc_send.clone()
+    /// Returns a sender that can be used to send requests to the Wayland server.
+    #[must_use]
+    pub fn request_sender(&self) -> UnboundedSender<RequestMessage> {
+        self.request_sender.clone()
     }
 
-    pub fn receiver(&self) -> &RecvSocket {
+    /// Returns a reference to the receiver socket.
+    #[must_use] 
+    pub const fn receiver(&self) -> &RecvSocket {
         &self.recv
     }
 }
 
+/// Errors that can occur when establishing a connection to a Wayland server.
 #[derive(Debug, Error)]
 pub enum ConnectionError {
+    /// The `XDG_RUNTIME_DIR` environment variable is not set.
     #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
     NoXdgRuntimeDir,
+    /// Could not connect to the Wayland display.
     #[error("Could not connect to wayland display.")]
     ConnectError(std::io::Error),
+    /// Could not clone the underlying Unix stream.
     #[error("Could not clone the stream.")]
     CloneError(std::io::Error),
 }
@@ -154,7 +162,7 @@ enum SendSocketError {
 pub struct RecvSocket(UnixSeqpacket);
 
 impl RecvSocket {
-    pub async fn read(&self, buf: &mut [u8]) {
+    pub async fn recv(&self, buf: &mut [u8]) {
         self.0.recv(buf).await.unwrap();
     }
 

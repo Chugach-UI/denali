@@ -1,3 +1,5 @@
+//! 32 bit fixed point number with 8 bits of fractional precision.
+
 #![allow(clippy::cast_precision_loss)]
 
 /// A fixed point integer with 8 bits of fractional precision.

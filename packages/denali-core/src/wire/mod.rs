@@ -3,6 +3,7 @@ use std::io::Cursor;
 use serde::CompileTimeMessageSize;
 
 pub mod serde;
+pub mod fixed;
 
 /// Pads the given position to the next multiple of 4 bytes (32 bits).
 #[must_use]

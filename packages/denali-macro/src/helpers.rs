@@ -13,7 +13,7 @@ pub fn arg_type_to_rust_type(type_: &str, lifetime: Option<&str>) -> TokenStream
     match type_ {
         "uint" | "object" | "new_id" => quote! { u32 },
         "int" => quote! { i32 },
-        "fixed" => quote! { denali_core::fixed::Fixed },
+        "fixed" => quote! { denali_core::wire::fixed::Fixed },
         "string" => quote! { denali_core::wire::serde::String #(<#lifetime>)* },
         "array" => quote! { denali_core::wire::serde::Array #(<#lifetime>)* },
         "fd" => quote! { () },

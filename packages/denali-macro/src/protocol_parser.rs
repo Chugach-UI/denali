@@ -8,20 +8,17 @@ pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
     quick_xml::de::from_reader::<_, Protocol>(reader)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Protocol {
     #[serde(rename = "@name")]
     pub name: String,
-    pub copyright: Option<Copyright>,
     pub description: Option<Description>,
     #[serde(default, rename = "interface")]
     pub interfaces: Vec<Interface>,
 }
 
-#[derive(Deserialize)]
-pub struct Copyright(String);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
     #[serde(rename = "@name")]
     pub name: String,

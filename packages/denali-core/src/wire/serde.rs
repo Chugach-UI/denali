@@ -1,3 +1,5 @@
+//! Serialization and deserialization of Wayland wire protocol messages.
+
 use std::{
     borrow::Cow,
     io::{Cursor, Write},
@@ -7,7 +9,7 @@ use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use paste::paste;
 use thiserror::Error;
 
-use crate::fixed::Fixed;
+use super::fixed::Fixed;
 
 /// The size of a message/type in bytes when encoded for the Wayland wire protocol.
 /// Types implementing this trait have a encoded size that is known at compile time.
