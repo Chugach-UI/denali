@@ -18,40 +18,6 @@ fn event_needs_lifetime(event: &Event) -> bool {
     })
 }
 
-fn build_handler_trait(interface: &Interface, events: &[Event]) -> TokenStream {
-    let methods = events.iter().map(|event| {
-        let method_name = build_ident(&format!("handle_{}", event.name), Case::Snake);
-
-        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
-        let event_struct_name = if event_needs_lifetime(event) {
-            quote! {#event_struct_name<'_>}
-        } else {
-            quote! {#event_struct_name}
-        };
-
-        let desc = build_documentation(event.description.as_ref(), None, None, None);
-        quote! {
-            #desc
-            fn #method_name(
-                &mut self,
-                _event: #event_struct_name,
-                object_id: denali_core::wire::serde::ObjectId,
-            ) {}
-        }
-    });
-
-    let trait_ident = build_ident(
-        &format!("Handle{}Events", interface.name.to_case(Case::Pascal)),
-        Case::Pascal,
-    );
-
-    quote! {
-        pub trait #trait_ident {
-            #(#methods)*
-        }
-    }
-}
-
 fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
     let needs_lifetime = events.iter().any(event_needs_lifetime);
 
@@ -349,7 +315,6 @@ pub fn build_interface(
         .collect::<Vec<_>>();
 
     let event_enum = build_event_enum(interface, &events);
-    let handler_trait = build_handler_trait(interface, &events);
 
     quote! {
         #documentation
@@ -380,7 +345,6 @@ pub fn build_interface(
         }
 
         #event_enum
-        #handler_trait
     }
 }
 

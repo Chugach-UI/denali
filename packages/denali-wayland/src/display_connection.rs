@@ -13,9 +13,10 @@ pub struct DisplayConnection {
 impl DisplayConnection {
     pub async fn new() -> Result<Self, DisplayConnectionError> {
         let id_manager = IdManager::default();
-        let connection = Connection::new().await.unwrap();
-        let display =
-            WlDisplay::from(Proxy::new(1, id_manager.clone(), connection.mpsc_sender()).unwrap());
+        let connection = Connection::new().unwrap();
+        let display = WlDisplay::from(
+            Proxy::new(1, id_manager.clone(), connection.request_sender()).unwrap(),
+        );
 
         Ok(Self {
             id_manager,
