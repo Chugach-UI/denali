@@ -1,13 +1,12 @@
 use std::collections::BTreeMap;
 
-use convert_case::{Case, Casing};
+use convert_case::Case;
 use proc_macro2::TokenStream;
 
 use crate::{
     Protocol, build_ident,
     helpers::build_documentation,
     interface::build_interface_module,
-    protocol_parser::{Element, Event},
 };
 use quote::quote;
 

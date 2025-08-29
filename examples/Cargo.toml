@@ -9,6 +9,7 @@ tokio = { workspace = true, features = ["full"] }
 denali-core = { workspace = true }
 denali-macro = { workspace = true }
 denali-wayland = { workspace = true }
+frunk = { workspace = true }
 
 [[example]]
 name = "simple"

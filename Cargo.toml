@@ -11,6 +11,7 @@ denali-core = { path = "packages/denali-core" }
 denali-wayland = { path = "packages/denali-wayland" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread"] }
+frunk = "0.4.4"
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

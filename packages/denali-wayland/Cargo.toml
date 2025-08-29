@@ -8,6 +8,7 @@ denali-macro = { workspace = true }
 denali-core = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+frunk = { workspace = true }
 
 [build-dependencies]
 flate2 = "1.1.2"
