@@ -62,7 +62,7 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
         impl #lifetime denali_core::handler::Message for #name #lifetime {
             fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
                 use denali_core::{wire::serde::Decode, Interface};
-                if interface >= #interface_ident::INTERFACE {
+                if interface != #interface_ident::INTERFACE {
                     return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
                 }
 

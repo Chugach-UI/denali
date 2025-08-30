@@ -172,7 +172,7 @@ impl RecvSocket {
             .recv(&mut buf)
             .await
             .map_err(RecvSocketError::IoError)?;
-        Ok(MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)?)
+        MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)
     }
 
     /// Receives data along with file descriptors from the Wayland server.

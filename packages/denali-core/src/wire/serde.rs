@@ -355,11 +355,17 @@ impl Decode for String<'_> {
         let mut cursor = Cursor::new(data);
         let size = cursor.read_u32::<LE>()? as usize;
 
-        if data.len() < size + 5 {
+        if size == 0 {
+            return Ok(Self {
+                data: "".into(),
+            });
+        }
+
+        if data.len() < size + 4 {
             return Err(SerdeError::InvalidSize);
         }
 
-        let array_data = &data[4..size + 5];
+        let array_data = &data[4..size + 4];
         assert!(
             array_data.ends_with(&[0]),
             "String data must end with a null terminator"

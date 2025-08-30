@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use frunk::{coproduct::CNil, hlist, Coprod, Coproduct};
+use frunk::{Coprod, Coproduct, coproduct::CNil, hlist};
 use thiserror::Error;
 
 use crate::wire::serde::ObjectId;
@@ -19,9 +19,12 @@ pub trait Handler<M: Message> {
 
 impl<A: Message, B: Message> Message for Coproduct<A, B> {
     fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, DecodeMessageError> {
-        A::try_decode(interface, opcode, data)
-            .map(Self::Inl)
-            .or_else(|_| B::try_decode(interface, opcode, data).map(Self::Inr))
+        match A::try_decode(interface, opcode, data) {
+            Ok(msg) => return Ok(Self::Inl(msg)),
+            Err(DecodeMessageError::UnknownInterface(_)) => {}
+            Err(e) => return Err(e),
+        }
+        B::try_decode(interface, opcode, data).map(Self::Inr)
     }
 }
 impl Message for CNil {
