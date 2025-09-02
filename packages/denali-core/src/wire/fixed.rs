@@ -173,7 +173,7 @@ impl Fixed {
 
 #[cfg(test)]
 mod tests {
-    use crate::fixed::Fixed;
+    use crate::wire::fixed::Fixed;
 
     #[test]
     fn ints() {

@@ -63,11 +63,7 @@ impl Connection {
                 send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
                     .await
                     .unwrap();
-
-                println!("Sent {msg:?}");
             }
-
-            println!("Worker exiting...");
         });
 
         Ok(Self {

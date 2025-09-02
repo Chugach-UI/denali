@@ -12,14 +12,13 @@ use denali_core::{
 use super::protocol::wayland::wl_display::WlDisplay;
 
 pub struct DisplayConnection {
-    id_manager: IdManager,
     display: WlDisplay,
     connection: Connection,
     interface_map: InterfaceMap,
 }
 
 impl DisplayConnection {
-    pub async fn new() -> Result<Self, DisplayConnectionError> {
+    pub fn new() -> Result<Self, DisplayConnectionError> {
         let id_manager = IdManager::default();
         let connection = Connection::new().unwrap();
         let interface_map = Rc::new(Mutex::new(BTreeMap::new()));
@@ -32,7 +31,7 @@ impl DisplayConnection {
             .insert(init_id, "wl_display".to_string());
         let display = WlDisplay::from(
             Proxy::new(
-                init_id,
+                1, // wl_display version is locked at 1
                 id_manager.clone(),
                 connection.request_sender(),
                 interface_map.clone(),
@@ -41,7 +40,6 @@ impl DisplayConnection {
         );
 
         Ok(Self {
-            id_manager,
             display,
             connection,
             interface_map,

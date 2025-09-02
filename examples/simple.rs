@@ -1,13 +1,8 @@
-use std::time::Duration;
-
-use denali_core::{handler::{Handler, Message}, Interface};
+use denali_core::{handler::Handler, Interface};
 use denali_wayland::{
     display_connection::DisplayConnection,
     protocol::wayland::{
-        wl_compositor::WlCompositor,
-        wl_display::{WlDisplay, WlDisplayEvent},
-        wl_registry::{WlRegistry, WlRegistryEvent},
-        wl_shm::WlShm,
+        wl_compositor::WlCompositor, wl_display::WlDisplayEvent, wl_registry::{WlRegistry, WlRegistryEvent}
     },
 };
 use frunk::Coprod;
@@ -28,6 +23,10 @@ impl Handler<WlRegistryEvent<'_>> for App {
         match message {
             WlRegistryEvent::Global(ev) => {
                 println!("New global: {} v{}", ev.interface.data, ev.version);
+                // FIXME: This somehow hangs the program????
+                // if ev.interface == WlCompositor::INTERFACE {
+                //     _ = self.registry.bind::<WlCompositor>(ev.name, 6);
+                // }
             }
             WlRegistryEvent::GlobalRemove(ev) => {
                 println!("Removed global: {}", ev.name);
@@ -53,13 +52,11 @@ impl Handler<WlDisplayEvent<'_>> for App {
 
 #[tokio::main]
 async fn main() {
-    let conn = DisplayConnection::new().await.unwrap();
+    let conn = DisplayConnection::new().unwrap();
     let disp = conn.display();
     let reg = disp.registry();
 
-    let app = App {
-        registry: reg,
-    };
+    let app = App { registry: reg };
 
     app.run(conn).await;
 }
