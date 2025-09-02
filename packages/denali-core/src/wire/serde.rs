@@ -342,6 +342,17 @@ impl<'a> From<Cow<'a, str>> for String<'a> {
     }
 }
 
+impl PartialEq<str> for String<'_> {
+    fn eq(&self, other: &str) -> bool {
+        self.data.eq(other)
+    }
+}
+impl PartialEq<&str> for String<'_> {
+    fn eq(&self, other: &&str) -> bool {
+        self.data.eq(other)
+    }
+}
+
 impl MessageSize for String<'_> {
     fn size(&self) -> usize {
         pad_to_32_bits(self.data.len() + 1) + 4 // 4 bytes for the size of the string + 1 for the null terminator
@@ -371,7 +382,7 @@ impl Decode for String<'_> {
             "String data must end with a null terminator"
         );
 
-        let Ok(string_data) = std::str::from_utf8(&array_data[..size]) else {
+        let Ok(string_data) = std::str::from_utf8(&array_data[..size - 1]) else {
             return Err(SerdeError::InvalidSize);
         };
 
