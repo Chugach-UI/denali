@@ -1,79 +1,15 @@
-use std::collections::BTreeMap;
-
-use convert_case::{Case, Casing};
+use convert_case::Case;
 use proc_macro2::TokenStream;
-use quote::quote;
 
 use crate::{
     build_ident,
     helpers::{build_documentation, expand_argument_type},
-    protocol_parser::{Arg, Element, Event, Interface, Request},
-    wire::{build_enum, build_event, build_request},
+    protocol_parser::{Arg, Request},
 };
+use std::collections::BTreeMap;
 
-fn event_needs_lifetime(event: &Event) -> bool {
-    event.args.iter().any(|arg| {
-        matches!(arg.type_.as_str(), "string" | "array")
-            || (arg.type_ == "new_id" && arg.interface.is_none())
-    })
-}
-
-fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
-    let needs_lifetime = events.iter().any(event_needs_lifetime);
-
-    let lifetime = if needs_lifetime {
-        quote! { <'a> }
-    } else {
-        quote! {}
-    };
-
-    let variants = events.iter().map(|event| {
-        let variant_ident = build_ident(&event.name, Case::Pascal);
-        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
-        let event_struct_name = if event_needs_lifetime(event) {
-            quote! {#event_struct_name<'a>}
-        } else {
-            quote! {#event_struct_name}
-        };
-
-        quote! {
-            #variant_ident(#event_struct_name)
-        }
-    });
-    let try_decode_opcode_arms = events.iter().enumerate().map(|(i, event)| {
-        let variant_ident = build_ident(&event.name, Case::Pascal);
-        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
-
-        let opcode = i as u16;
-
-        quote! {
-            #opcode => #event_struct_name::decode(data).map(Self::#variant_ident).map_err(Into::into),
-        }
-    });
-
-    let name = build_ident(&format!("{}Event", interface.name), Case::Pascal);
-    let interface_ident = build_ident(&interface.name, Case::Pascal);
-
-    quote! {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub enum #name #lifetime {
-            #(#variants),*
-        }
-        impl #lifetime denali_core::handler::Message for #name #lifetime {
-            fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
-                use denali_core::{wire::serde::Decode, Interface};
-                if interface != #interface_ident::INTERFACE {
-                    return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
-                }
-
-                match opcode {
-                    #(#try_decode_opcode_arms)*
-                    _ => Err(denali_core::handler::DecodeMessageError::UnknownOpcode(opcode)),
-                }
-            }
-        }
-    }
-}
+use convert_case::Casing;
+use quote::quote;
 
 fn build_request_method_body(
     request: &Request,
@@ -100,7 +36,6 @@ fn build_request_method_body(
     };
     let new_id = if new_id_generic {
         quote! {
-            let interface = <#return_type as denali_core::Interface>::INTERFACE;
             let new_id = denali_core::wire::serde::DynamicallyTypedNewId {
                 interface: denali_core::wire::serde::String::from(interface),
                 version,
@@ -122,11 +57,18 @@ fn build_request_method_body(
         quote! {()}
     };
 
-    let create_obj = if new_id_arg.is_some() {
-        //TODO: AAAHAHAH
+    let create_obj = if new_id_arg.is_some() && !new_id_generic {
         quote! {
             let version = #version;
             let new_obj: #return_type = self.0.create_object(version).unwrap();
+            let id = denali_core::Object::id(&new_obj);
+
+            #new_id
+        }
+    } else if new_id_generic {
+        quote! {
+            let version = #version;
+            let new_obj = self.0.create_object_raw(interface, version).unwrap();
             let id = denali_core::Object::id(&new_obj);
 
             #new_id
@@ -261,15 +203,51 @@ pub fn build_request_method(
         None => (quote! {}, quote! {()}),
     };
 
+    let has_raw_function = matches!(
+        new_id_arg,
+        Some(Arg {
+            interface: None,
+            ..
+        })
+    );
+
     let body = build_request_method_body(request, new_id_arg, &ret);
 
+    let raw_name = build_ident(&format!("{name}_raw"), Case::Snake);
+
+    let raw_function = if has_raw_function {
+        quote! {
+            #doc
+            /// # Errors
+            ///
+            /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
+            pub fn #raw_name (#self_, interface: &str, #(#args),*) -> Result<denali_core::proxy::Proxy, denali_core::wire::serde::SerdeError> {
+                #body
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let try_function_body = if has_raw_function {
+        quote! {
+            self.#raw_name(<#ret as denali_core::Interface>::INTERFACE, #(#arg_names),*).map(Into::into)
+        }
+    } else {
+        quote! {
+            #body
+        }
+    };
+
     quote! {
+        #raw_function
+
         #doc
         /// # Errors
         ///
         /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
         pub fn #try_name #generic (#self_, #(#args),*) -> Result<#ret, denali_core::wire::serde::SerdeError> {
-            #body
+            #try_function_body
         }
         #doc
         pub fn #name #generic (#self_, #(#args),*) -> #ret {
@@ -277,99 +255,6 @@ pub fn build_request_method(
                 Ok(ret) => ret,
                 Err(err) => panic!("Failed to send request: {}", err),
             }
-        }
-    }
-}
-
-//TODO: DO SERVER SIDE CODEGEN AS WELL
-pub fn build_interface(
-    interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
-) -> TokenStream {
-    let documentation = build_documentation(interface.description.as_ref(), None, None, None);
-    let interface_str = interface.name.to_case(Case::Snake);
-    let name = build_ident(&interface.name, Case::Pascal);
-    let version = interface.version;
-
-    let methods = interface.elements.iter().filter_map(|element| {
-        if let Element::Request(request) = element {
-            Some(build_request_method(request, interface_map))
-        } else {
-            None
-        }
-    });
-
-    let events = interface
-        .elements
-        .iter()
-        .cloned()
-        .filter_map(|element| {
-            if let Element::Event(event) = element {
-                Some(event)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let event_enum = build_event_enum(interface, &events);
-
-    quote! {
-        #documentation
-        pub struct #name(denali_core::proxy::Proxy);
-
-        impl #name {
-            #(#methods)*
-        }
-
-        impl From<denali_core::proxy::Proxy> for #name {
-            fn from(proxy: denali_core::proxy::Proxy) -> Self {
-                Self(proxy)
-            }
-        }
-
-        impl denali_core::Object for #name {
-            fn id(&self) -> u32 {
-                self.0.id()
-            }
-            fn send_request(&self, request: denali_core::proxy::RequestMessage) {
-                self.0.send_request(request);
-            }
-        }
-        impl denali_core::Interface for #name {
-            const INTERFACE: &'static str = #interface_str;
-
-            const MAX_VERSION: u32 = #version;
-        }
-
-        #event_enum
-    }
-}
-
-pub fn build_interface_module(
-    interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
-) -> TokenStream {
-    let interface_name = build_ident(&interface.name, Case::Snake);
-    let interface_desc = build_documentation(interface.description.as_ref(), None, None, None);
-    let interface_version = interface.version;
-
-    let events = interface.elements.iter().map(|element| match element {
-        Element::Event(event) => Some(build_event(event, interface, interface_map)),
-        Element::Request(request) => Some(build_request(request, interface, interface_map)),
-        Element::Enum(enum_) => Some(build_enum(enum_)),
-    });
-
-    let interface = build_interface(interface, interface_map);
-
-    quote! {
-        #interface_desc
-        pub mod #interface_name {
-            pub const VERSION: u32 = #interface_version;
-
-            #interface
-
-            #(#events)*
         }
     }
 }

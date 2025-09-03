@@ -2,7 +2,9 @@ use denali_core::{handler::Handler, Interface};
 use denali_wayland::{
     display_connection::DisplayConnection,
     protocol::wayland::{
-        wl_compositor::WlCompositor, wl_display::WlDisplayEvent, wl_registry::{WlRegistry, WlRegistryEvent}
+        wl_compositor::WlCompositor,
+        wl_display::WlDisplayEvent,
+        wl_registry::{WlRegistry, WlRegistryEvent},
     },
 };
 use frunk::Coprod;
@@ -24,9 +26,9 @@ impl Handler<WlRegistryEvent<'_>> for App {
             WlRegistryEvent::Global(ev) => {
                 println!("New global: {} v{}", ev.interface.data, ev.version);
                 // FIXME: This somehow hangs the program????
-                // if ev.interface == WlCompositor::INTERFACE {
-                //     _ = self.registry.bind::<WlCompositor>(ev.name, 6);
-                // }
+                _ = self
+                    .registry
+                    .bind_raw(&ev.interface.data, ev.name, ev.version)
             }
             WlRegistryEvent::GlobalRemove(ev) => {
                 println!("Removed global: {}", ev.name);

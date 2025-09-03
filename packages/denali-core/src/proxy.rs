@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, os::fd::RawFd, rc::Rc, sync::Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::wire::serde::ObjectId;
+use crate::{Object, wire::serde::ObjectId};
 
 use super::id_manager::{IdManager, IdManagerError};
 
@@ -49,7 +49,7 @@ impl Proxy {
         interface_map: InterfaceMap,
     ) -> Result<Self, IdManagerError> {
         let id = shared_manager.alloc_id()?;
-        
+
         Ok(Self {
             id,
             version,
@@ -74,6 +74,24 @@ impl Proxy {
         )
         .map(From::from)
     }
+    /// Create a new object with the given interface name.
+    ///
+    /// # Errors
+    ///
+    /// This function can error if [IdManager::alloc_id] fails to allocate a new ID.
+    pub fn create_object_raw(
+        &self,
+        interface: &str,
+        version: u32,
+    ) -> Result<Proxy, IdManagerError> {
+        self.register_interface(interface);
+        Self::new(
+            version,
+            self.id_manager.clone(),
+            self.request_sender.clone(),
+            self.interface_map.clone(),
+        )
+    }
 
     pub(crate) fn register_interface(&self, interface: &str) {
         let new_id = self.id_manager.peek_next_id().unwrap();
@@ -84,5 +102,14 @@ impl Proxy {
     /// Send a request over the wire associated with this proxy.
     pub fn send_request(&self, request: RequestMessage) {
         self.request_sender.send(request).unwrap();
+    }
+}
+
+impl Object for Proxy {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn send_request(&self, request: RequestMessage) {
+        self.send_request(request);
     }
 }
