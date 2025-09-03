@@ -400,7 +400,7 @@ impl Encode for String<'_> {
         }
 
         let mut cursor = Cursor::new(data);
-        cursor.write_u32::<LE>(self.data.len() as u32)?;
+        cursor.write_u32::<LE>(self.data.len() as u32 + 1)?;
         cursor.write_all(self.data.as_bytes())?;
         cursor.write_u8(0)?; // null terminator
 
