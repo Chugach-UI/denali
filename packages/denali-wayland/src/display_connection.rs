@@ -6,7 +6,8 @@ use denali_core::{
     connection::Connection,
     handler::{Handler, Message},
     id_manager::IdManager,
-    proxy::{InterfaceMap, Proxy}, wire::serde::Encode,
+    proxy::{InterfaceMap, Proxy},
+    wire::serde::Encode,
 };
 
 use super::protocol::wayland::wl_display::WlDisplay;
@@ -57,27 +58,32 @@ impl DisplayConnection {
         let mut buf = vec![0u8; size];
 
         self.connection
-        .receiver()
-        .recv_with_ancillary(&mut buf, &mut [])
-        .await
-        .unwrap();
-    
+            .receiver()
+            .recv_with_ancillary(&mut buf, &mut [])
+            .await
+            .unwrap();
+
         let mut head_buf = [0u8; 8];
         head.encode(&mut head_buf).unwrap();
 
         let map = self.interface_map.lock().unwrap();
-        let interface = map.get(&head.object_id);
-        if let Some(interface) = interface {
-            let msg = M::try_decode(interface, head.opcode, &buf);
-            match msg {
-                Err(e) => {
-                    println!("Failed to decode message for interface {interface:?}: {e}");
-                    // println!("Header: {head:?}, Data: {buf:x?}, size: {size}, data_len: {}", buf.len());
-                }
-                Ok(msg) => handler.handle(msg, head.object_id),
-            }
+        let message = map
+            .get(&head.object_id)
+            .map(|iface| M::try_decode(iface, head.opcode, &buf))
+            .transpose()
+            .map_err(|e| {
+                println!("Failed to decode message for interface {e:?}: {head:?}");
+                e
+            })
+            .ok()
+            .flatten();
+
+        drop(map);
+
+        if let Some(message) = message {
+            handler.handle(message, head.object_id);
         } else {
-            println!("Unhandled message for interface {interface:?}: {head:?}");
+            println!("Unhandled message for interface {message:?}: {head:?}");
         }
     }
 }

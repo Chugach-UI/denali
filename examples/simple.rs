@@ -25,7 +25,6 @@ impl Handler<WlRegistryEvent<'_>> for App {
         match message {
             WlRegistryEvent::Global(ev) => {
                 println!("New global: {} v{}", ev.interface.data, ev.version);
-                // FIXME: This somehow hangs the program????
                 _ = self
                     .registry
                     .bind_raw(&ev.interface.data, ev.name, ev.version)

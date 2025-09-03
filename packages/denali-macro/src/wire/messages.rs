@@ -105,7 +105,7 @@ fn build_message(
             _ => {}
         }
     }
-    let opcode = quote! { const OPCODE: u16 = #opcode; };
+    let opcode = quote! { pub const OPCODE: u16 = #opcode; };
 
     let name = format_ident!("{}{suffix}", message.name().to_case(Case::Pascal));
     let docs = build_documentation(
