@@ -10,7 +10,12 @@ denali-core = { workspace = true }
 denali-macro = { workspace = true }
 denali-wayland = { workspace = true }
 frunk = { workspace = true }
+xkbcommon-rs = "0.1.2"
 
 [[example]]
 name = "simple"
 path = "simple.rs"
+
+[[example]]
+name = "wayland_book"
+path = "wayland_book.rs"
