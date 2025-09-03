@@ -1,3 +1,7 @@
+//! A proxy object representing a remote object on the Wayland server.
+//!
+//! Interface types wrap around proxy objects to provide access to requests and events specific to that interface.
+
 use std::{collections::BTreeMap, os::fd::RawFd, rc::Rc, sync::Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;

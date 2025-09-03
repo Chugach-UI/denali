@@ -1,3 +1,5 @@
+//! A module for establishing and managing a connection to a Wayland server.
+
 use std::{
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
@@ -80,7 +82,7 @@ impl Connection {
     }
 
     /// Returns a reference to the receiver socket.
-    #[must_use] 
+    #[must_use]
     pub const fn receiver(&self) -> &RecvSocket {
         &self.recv
     }

@@ -1,3 +1,25 @@
+//! A thread-safe manager for allocating and recycling unique client IDs.
+//!
+//! Incorrect management of IDs will lead to the Wayland server terminating the connection.
+//! Therefore, it is important to have a robust ID management system in place.
+//! This module provides such a system with the [`IdManager`] struct.
+//!
+//! [`IdManager`] is thread-safe and can be shared across multiple threads.
+//!
+//! # Example
+//!
+//! ```
+//! use denali_core::id_manager::IdManager;
+//!
+//! let id_manager = IdManager::new();
+//! let id1 = id_manager.alloc_id().unwrap();
+//! let id2 = id_manager.alloc_id().unwrap();
+//! assert_ne!(id1, id2);
+//! id_manager.recycle_id(id1);
+//! let id3 = id_manager.alloc_id().unwrap();
+//! assert_eq!(id1, id3); // id1 should be reused
+//! ```
+
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::{cmp::Reverse, collections::BinaryHeap};
@@ -25,7 +47,6 @@ impl IdManagerInner {
     }
 
     /// Peeks at the next available id without allocating it.
-    #[must_use]
     pub fn peek_next_id(&self) -> Result<u32, IdManagerError> {
         if self.next > CLIENT_MAX_ID && self.free_list.is_empty() {
             return Err(IdManagerError::OutOfClientIds(self.next));
@@ -43,9 +64,9 @@ impl IdManagerInner {
     }
 
     /// Gets the next available id
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function will return an error if all client IDs have been exhausted.
     pub fn alloc_id(&mut self) -> Result<u32, IdManagerError> {
         if self.next > CLIENT_MAX_ID && self.free_list.is_empty() {
@@ -97,16 +118,16 @@ pub struct IdManager(Arc<Mutex<IdManagerInner>>);
 impl IdManager {
     #[must_use]
     /// Creates a new `IdManager`.
-    /// 
+    ///
     /// The first ID allocated will be `CLIENT_MIN_ID`.
     pub fn new() -> Self {
         Self(Arc::new(Mutex::new(IdManagerInner::new())))
     }
 
     /// Peeks at the next available id without allocating it.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function will return an error if all client IDs have been exhausted.
     pub fn peek_next_id(&self) -> Result<ObjectId, IdManagerError> {
         let inner = self.0.lock().unwrap();
@@ -114,9 +135,9 @@ impl IdManager {
     }
 
     /// Gets the next available id
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This function will return an error if all client IDs have been exhausted.
     pub fn alloc_id(&self) -> Result<ObjectId, IdManagerError> {
         let mut inner = self.0.lock().unwrap();

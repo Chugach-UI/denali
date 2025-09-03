@@ -17,7 +17,6 @@ pub struct Protocol {
     pub interfaces: Vec<Interface>,
 }
 
-
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
     #[serde(rename = "@name")]

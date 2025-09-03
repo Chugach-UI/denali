@@ -126,7 +126,8 @@ fn build_message(
         .iter()
         .map(|arg| {
             let arg_name = build_ident(&arg.name, Case::Snake);
-            let arg_docs = build_documentation(arg.description.as_ref(), arg.summary.as_ref(), None, None);
+            let arg_docs =
+                build_documentation(arg.description.as_ref(), arg.summary.as_ref(), None, None);
             let arg_type = expand_argument_type(arg, interface_map, Some("'a"));
             quote! {
                 #arg_docs

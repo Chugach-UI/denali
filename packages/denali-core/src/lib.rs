@@ -4,10 +4,10 @@
 #![feature(unix_socket_ancillary_data)]
 
 pub mod connection;
+pub mod handler;
 pub mod id_manager;
 pub mod proxy;
 pub mod wire;
-pub mod handler;
 
 /// A Wayland object.
 pub trait Object: From<proxy::Proxy> {

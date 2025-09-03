@@ -367,9 +367,7 @@ impl Decode for String<'_> {
         let size = cursor.read_u32::<LE>()? as usize;
 
         if size == 0 {
-            return Ok(Self {
-                data: "".into(),
-            });
+            return Ok(Self { data: "".into() });
         }
 
         if data.len() < size + 4 {

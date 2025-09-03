@@ -1,19 +1,32 @@
 //! Traits and utilities for handling requests and events.
 
-use std::cell::{Cell, RefCell};
-
-use frunk::{Coprod, Coproduct, coproduct::CNil, hlist};
+use frunk::{Coproduct, coproduct::CNil};
 use thiserror::Error;
 
 use crate::wire::serde::ObjectId;
 
+/// Represents a message (either request or event) sent over the wire that can be decoded and handled.
+///
+/// The `try_decode` method provides the targeted object's interface name, the opcode, and the body of the message
 pub trait Message {
+    /// Attempt to decode a message from the given interface name, opcode, and data.
+    ///
+    /// # Errors
+    ///
+    /// This method can return the following errors:
+    /// - [`DecodeMessageError::UnknownInterface`]: The provided interface name is not recognized.
+    /// - [`DecodeMessageError::UnknownOpcode`]: The provided opcode is not recognized for the given interface.
+    /// - [`DecodeMessageError::DecodeError`]: The message could not be decoded due to malformed data.
     fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, DecodeMessageError>
     where
         Self: Sized;
 }
 
+/// A handler for messages of type `M`.
+///
+/// The `handle` method is called when a message of type `M` is received, along with the ID of the object the message is associated with.
 pub trait Handler<M: Message> {
+    /// Handle a message of type `M` associated with the given object ID.
     fn handle(&mut self, message: M, object_id: ObjectId);
 }
 
@@ -45,12 +58,16 @@ impl<L: Message, R: Message, H: Handler<L> + Handler<R>> Handler<Coproduct<L, R>
     }
 }
 
+/// Errors that can occur while decoding a message.
 #[derive(Debug, Error)]
 pub enum DecodeMessageError {
+    /// The provided interface name is not recognized.
     #[error("unknown interface: {0}")]
     UnknownInterface(String),
+    /// The provided opcode is not recognized for the given interface.
     #[error("unknown opcode: {0}")]
     UnknownOpcode(u16),
+    /// The message could not be decoded due to malformed data.
     #[error("failed to decode message: {0}")]
     DecodeError(#[from] crate::wire::serde::SerdeError),
 }

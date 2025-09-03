@@ -1,9 +1,16 @@
+//! Wayland wire protocol encoding and decoding utilities.
+//!
+//! * [`serde`] provides serialization and deserialization traits and implementations for Wayland types.
+//! * [`fixed`] provides fixed-size types for use in Wayland messages.
+//!
+//! [`MessageDecoder`] and [`MessageEncoder`] are helpers for decoding and encoding byte buffers according to the Wayland wire protocol.
+
 use std::io::Cursor;
 
 use serde::CompileTimeMessageSize;
 
-pub mod serde;
 pub mod fixed;
+pub mod serde;
 
 /// Pads the given position to the next multiple of 4 bytes (32 bits).
 #[must_use]

@@ -164,7 +164,7 @@ impl From<Fixed> for usize {
 }
 
 impl Fixed {
-    #[must_use] 
+    #[must_use]
     /// Returns the absolute value of the fixed point number.
     pub const fn abs(self) -> Fixed {
         Fixed(self.0.abs())
