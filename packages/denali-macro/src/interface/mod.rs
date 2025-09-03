@@ -2,7 +2,7 @@ mod method;
 
 use std::collections::BTreeMap;
 
-use convert_case::{Case, Casing};
+use convert_case::{Boundary, Case, Casing};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -84,7 +84,10 @@ pub fn build_interface(
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
     let documentation = build_documentation(interface.description.as_ref(), None, None, None);
-    let interface_str = interface.name.to_case(Case::Snake);
+    let interface_str = interface
+        .name
+        .without_boundaries(&[Boundary::LOWER_DIGIT])
+        .to_case(Case::Snake);
     let name = build_ident(&interface.name, Case::Pascal);
     let version = interface.version;
 
