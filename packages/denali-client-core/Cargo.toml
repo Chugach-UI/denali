@@ -7,7 +7,7 @@ edition = "2024"
 denali-core = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-seqpacket = "0.8.0"
+tokio-seqpacket = { workspace = true }
 
 [lints]
 workspace = true

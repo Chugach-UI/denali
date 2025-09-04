@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+denali-core = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-denali-core = { workspace = true }
+tokio-seqpacket = { workspace = true }
 
 [lints]
 workspace = true

@@ -15,6 +15,7 @@ denali-server-core = { path = "packages/denali-server-core" }
 denali-server = { path = "packages/denali-server" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread"] }
+tokio-seqpacket = "0.8.0"
 frunk = "0.4.4"
 
 [workspace.lints.rust]
