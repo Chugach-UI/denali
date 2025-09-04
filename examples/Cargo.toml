@@ -19,3 +19,7 @@ path = "simple.rs"
 [[example]]
 name = "wayland_book"
 path = "wayland_book.rs"
+
+[[example]]
+name = "bluh"
+path = "bluh.rs"

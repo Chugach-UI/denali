@@ -24,7 +24,27 @@ pub struct RequestMessage {
 /// A map of object IDs to their interface names.
 pub type InterfaceMap = Rc<Mutex<BTreeMap<ObjectId, String>>>;
 
+/// Shared state for proxy objects, allowing them to share an IdManager and request sender.
+#[derive(Debug, Clone)]
+pub struct SharedProxyState {
+    pub id_manager: IdManager,
+    pub request_sender: UnboundedSender<RequestMessage>,
+    pub interface_map: InterfaceMap,
+}
+
+/// A trait for types that thinly wrap around a [Proxy] object.
+///
+/// # Safety
+///
+/// This trait is unsafe because incorrect implementations can lead to undefined behavior.
+/// Types implementing this trait must have the same layout as [Proxy].
+pub unsafe trait ProxyUpcast {
+    /// Upcast a reference to a [Proxy] to a reference to Self.
+    fn upcast_ref(proxy: &Proxy) -> &Self;
+}
+
 /// A proxy object representing a remote object on the Wayland server.
+#[derive(Debug, Clone)]
 pub struct Proxy {
     id: u32,
     version: u32,
@@ -66,6 +86,23 @@ impl Proxy {
             request_sender,
             interface_map,
         })
+    }
+
+    /// Create a new proxy object with the given ID.
+    pub const fn with_id(
+        version: u32,
+        id: ObjectId,
+        shared_manager: IdManager,
+        request_sender: UnboundedSender<RequestMessage>,
+        interface_map: InterfaceMap,
+    ) -> Self {
+        Self {
+            id,
+            version,
+            id_manager: shared_manager,
+            request_sender,
+            interface_map,
+        }
     }
 
     /// Create a new object of the given interface type.

@@ -10,7 +10,7 @@ use crate::{
     build_ident,
     helpers::build_documentation,
     interface::method::build_request_method,
-    protocol_parser::{Element, Event, Interface},
+    protocol_parser::{Element, Event, Interface, Request},
     wire::{build_enum, build_event, build_request},
 };
 
@@ -115,8 +115,33 @@ pub fn build_interface(
 
     let event_enum = build_event_enum(interface, &events);
 
+    let drop_impl = if let Some(destructor) = interface
+        .elements
+        .iter()
+        .filter_map(|elem| {
+            if let Element::Request(req) = elem {
+                Some(req)
+            } else {
+                None
+            }
+        })
+        .find(|req| req.type_.as_deref() == Some("destructor"))
+    {
+        let destructor = build_ident(&format!("{}_inner", destructor.name), Case::Snake);
+        quote! {
+            impl std::ops::Drop for #name {
+                fn drop(&mut self) {
+                    let _ = self.#destructor();
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #documentation
+        #[repr(transparent)]
         pub struct #name(denali_client_core::proxy::Proxy);
 
         impl #name {
@@ -128,6 +153,16 @@ pub fn build_interface(
                 Self(proxy)
             }
         }
+        impl From<#name> for denali_client_core::proxy::Proxy {
+            fn from(iface: #name) -> Self {
+                let manual = std::mem::ManuallyDrop::new(iface);
+                // SAFETY: We're taking ownership of the inner value and preventing
+                // the Drop impl from running by using ManuallyDrop
+                unsafe { std::ptr::read(&manual.0) }
+            }
+        }
+
+        #drop_impl
 
         impl denali_client_core::Object for #name {
             fn id(&self) -> u32 {
@@ -141,6 +176,12 @@ pub fn build_interface(
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;
+        }
+        unsafe impl denali_client_core::proxy::ProxyUpcast for #name {
+            fn upcast_ref(proxy: &denali_client_core::proxy::Proxy) -> &Self {
+                //SAFETY: Proxy and all generated interface structs are repr(transparent) wrappers over Proxy
+                unsafe { std::mem::transmute(proxy) }
+            }
         }
 
         #event_enum

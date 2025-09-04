@@ -147,7 +147,9 @@ pub fn build_request_method(
 
     let doc = build_documentation(request.description.as_ref(), None, None, None);
 
-    let self_ = if request.type_.as_ref().is_some_and(|t| t == "destructor") {
+    let is_destructor = request.type_.as_ref().is_some_and(|t| t == "destructor");
+
+    let self_ = if is_destructor {
         quote! { self }
     } else {
         quote! { &self }
@@ -230,9 +232,25 @@ pub fn build_request_method(
         quote! {}
     };
 
+    let destructor_name = build_ident(&format!("{name}_inner"), Case::Snake);
+    let destructor_inner_function = if is_destructor {
+        quote! {
+            pub(crate) fn #destructor_name (&self) -> Result<#ret, denali_core::wire::serde::SerdeError> {
+                #body
+            }
+        }
+    } else {
+        quote! { }
+    };
+
     let try_function_body = if has_raw_function {
         quote! {
             self.#raw_name(<#ret as denali_client_core::Interface>::INTERFACE, #(#arg_names),*).map(Into::into)
+        }
+    } else if is_destructor {
+        quote! {
+            let this = std::mem::ManuallyDrop::new(self);
+            this.#destructor_name()
         }
     } else {
         quote! {
@@ -242,6 +260,7 @@ pub fn build_request_method(
 
     quote! {
         #raw_function
+        #destructor_inner_function
 
         #doc
         /// # Errors

@@ -4,9 +4,10 @@
 
 pub mod connection;
 pub mod proxy;
+pub mod store;
 
 /// A Wayland object.
-pub trait Object: From<proxy::Proxy> {
+pub trait Object: From<proxy::Proxy> + Into<proxy::Proxy> {
     /// Get the unique ID of this object.
     fn id(&self) -> u32;
     /// Send a request over the wire associated with this object.

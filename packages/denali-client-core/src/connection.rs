@@ -14,7 +14,7 @@ use tokio_seqpacket::{
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
 
-use crate::proxy::RequestMessage;
+use crate::{proxy::{RequestMessage, SharedProxyState}, store::Store};
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
 
 /// A connection to a Wayland server.

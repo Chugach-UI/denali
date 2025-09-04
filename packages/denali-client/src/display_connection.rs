@@ -7,14 +7,15 @@ use denali_core::{
     id_manager::IdManager,
     wire::serde::Encode,
 };
-use denali_client_core::{connection::Connection, proxy::{InterfaceMap, Proxy}};
+use denali_client_core::{connection::Connection, proxy::{InterfaceMap, Proxy, SharedProxyState}, store::Store};
 
 use super::protocol::wayland::wl_display::WlDisplay;
 
 pub struct DisplayConnection {
     display: WlDisplay,
     connection: Connection,
-    interface_map: InterfaceMap,
+
+    shared_state: SharedProxyState,
 }
 
 impl DisplayConnection {
@@ -41,9 +42,19 @@ impl DisplayConnection {
 
         Ok(Self {
             display,
+            shared_state: SharedProxyState {
+                id_manager,
+                request_sender: connection.request_sender(),
+                interface_map: interface_map.clone(),
+            },
             connection,
-            interface_map,
         })
+    }
+
+    /// Creates a new Store associated with this connection.
+    #[must_use]
+    pub fn create_store(&self) -> Store {
+        Store::new(self.shared_state.clone())
     }
 
     #[must_use]
@@ -65,7 +76,7 @@ impl DisplayConnection {
         let mut head_buf = [0u8; 8];
         head.encode(&mut head_buf).unwrap();
 
-        let map = self.interface_map.lock().unwrap();
+        let map = self.shared_state.interface_map.lock().unwrap();
         let message = map
             .get(&head.object_id)
             .map(|iface| M::try_decode(iface, head.opcode, &buf))
