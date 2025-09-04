@@ -1,10 +1,12 @@
 //! Denali core utilities only pertaining to the client side of the wayland protocol.
 
 #![feature(unix_socket_ancillary_data)]
+#![feature(atomic_from_mut)]
 
 pub mod connection;
 pub mod proxy;
 pub mod store;
+mod stream;
 
 /// A Wayland object.
 pub trait Object: From<proxy::Proxy> + Into<proxy::Proxy> {

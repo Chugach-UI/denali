@@ -8,7 +8,10 @@ use std::{
 };
 
 use thiserror::Error;
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::{
+    signal::unix::{Signal, SignalKind, signal},
+    sync::mpsc::{self, UnboundedSender},
+};
 use tokio_seqpacket::{
     UnixSeqpacket,
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
@@ -21,7 +24,10 @@ use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
 pub struct Connection {
     recv: RecvSocket,
     request_sender: mpsc::UnboundedSender<RequestMessage>,
-    worker_handle: tokio::task::JoinHandle<()>,
+    worker_handle: tokio::task::JoinHandle<Result<(), SendSocketError>>,
+    sighup: Signal,
+    sigterm: Signal,
+    sigint: Signal,
 }
 
 impl Connection {
@@ -60,16 +66,27 @@ impl Connection {
 
         let worker_handle = tokio::task::spawn(async move {
             while let Some(msg) = request_receiver.recv().await {
-                send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
+                if let Err(e) = send
+                    .send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
                     .await
-                    .unwrap();
+                {
+                    return Err(e);
+                }
             }
+            Ok(())
         });
+
+        let sighup = signal(SignalKind::hangup()).unwrap();
+        let sigterm = signal(SignalKind::terminate()).unwrap();
+        let sigint = signal(SignalKind::interrupt()).unwrap();
 
         Ok(Self {
             recv,
             request_sender,
             worker_handle,
+            sighup,
+            sigterm,
+            sigint,
         })
     }
 
@@ -84,6 +101,37 @@ impl Connection {
     pub const fn receiver(&self) -> &RecvSocket {
         &self.recv
     }
+
+    /// Waits for the next async event to occur, which can either be a wayland packet, a worker thread failure, or a unix signal
+    pub async fn wait_next_event(&mut self) -> ConnectionEvent {
+        tokio::select! {
+            head = self.recv.recv_header() => {
+                ConnectionEvent::WaylandMessage(head)
+            },
+            Ok(res) = &mut self.worker_handle => {
+                eprintln!("Worker task terminated.");
+                ConnectionEvent::WorkerTerminated(res)
+            },
+            _ = self.sighup.recv() => {
+                eprintln!("Received SIGHUP");
+                ConnectionEvent::TerminationSignalReceived(SignalKind::hangup())
+            },
+            _ = self.sigterm.recv() => {
+                eprintln!("Received SIGTERM");
+                ConnectionEvent::TerminationSignalReceived(SignalKind::terminate())
+            },
+            _ = self.sigint.recv() => {
+                eprintln!("Received SIGINT");
+                ConnectionEvent::TerminationSignalReceived(SignalKind::interrupt())
+            },
+        }
+    }
+}
+
+pub enum ConnectionEvent {
+    WaylandMessage(Result<MessageHeader, RecvSocketError>),
+    WorkerTerminated(Result<(), SendSocketError>),
+    TerminationSignalReceived(SignalKind),
 }
 
 /// Errors that can occur when establishing a connection to a Wayland server.
@@ -100,7 +148,7 @@ pub enum ConnectionError {
     CloneError(std::io::Error),
 }
 
-struct SendSocket(UnixSeqpacket);
+pub struct SendSocket(UnixSeqpacket);
 
 impl SendSocket {
     /// Sends data along with file descriptors to the Wayland server.
@@ -148,7 +196,7 @@ impl From<UnixSeqpacket> for SendSocket {
 }
 
 #[derive(Debug, Error)]
-enum SendSocketError {
+pub enum SendSocketError {
     #[error("Failed to add fds to ancillary buffer")]
     AddFdsFailed(#[from] AddControlMessageError),
     #[error("IO operation failed.")]

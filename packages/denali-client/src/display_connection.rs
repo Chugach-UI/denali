@@ -2,12 +2,21 @@ use std::{collections::BTreeMap, rc::Rc, sync::Mutex};
 
 use thiserror::Error;
 
+use denali_client_core::{
+    connection::Connection,
+    proxy::{InterfaceMap, Proxy},
+};
+use denali_client_core::{
+    connection::Connection,
+    proxy::{InterfaceMap, Proxy, SharedProxyState},
+    store::Store,
+};
 use denali_core::{
     handler::{Handler, Message},
     id_manager::IdManager,
     wire::serde::Encode,
 };
-use denali_client_core::{connection::Connection, proxy::{InterfaceMap, Proxy, SharedProxyState}, store::Store};
+use tokio::signal::unix::SignalKind;
 
 use super::protocol::wayland::wl_display::WlDisplay;
 
@@ -62,38 +71,55 @@ impl DisplayConnection {
         &self.display
     }
 
-    pub async fn handle_event<M: Message + std::fmt::Debug, H: Handler<M>>(&self, handler: &mut H) {
-        let head = self.connection.receiver().recv_header().await.unwrap();
-        let size = head.size as usize - 8;
-        let mut buf = vec![0u8; size];
+    pub async fn handle_event<M: Message + std::fmt::Debug, H: Handler<M>>(
+        &mut self,
+        handler: &mut H,
+    ) -> Result<(), DisplayConnectionError> {
+        match self.connection.wait_next_event().await {
+            denali_client_core::connection::ConnectionEvent::WaylandMessage(head) => {
+                let head = head.unwrap();
+                let size = head.size as usize - 8;
+                let mut buf = vec![0u8; size];
 
-        self.connection
-            .receiver()
-            .recv_with_ancillary(&mut buf, &mut [])
-            .await
-            .unwrap();
+                self.connection
+                    .receiver()
+                    .recv_with_ancillary(&mut buf, &mut [])
+                    .await
+                    .unwrap();
 
-        let mut head_buf = [0u8; 8];
-        head.encode(&mut head_buf).unwrap();
+                let mut head_buf = [0u8; 8];
+                head.encode(&mut head_buf).unwrap();
 
-        let map = self.shared_state.interface_map.lock().unwrap();
-        let message = map
-            .get(&head.object_id)
-            .map(|iface| M::try_decode(iface, head.opcode, &buf))
-            .transpose()
-            .map_err(|e| {
-                println!("Failed to decode message for interface {e:?}: {head:?}");
-                e
-            })
-            .ok()
-            .flatten();
+                let map = self.shared_state.interface_map.lock().unwrap();
+                let message = map
+                    .get(&head.object_id)
+                    .map(|iface| M::try_decode(iface, head.opcode, &buf))
+                    .transpose()
+                    .map_err(|e| {
+                        println!("Failed to decode message for interface {e:?}: {head:?}");
+                        e
+                    })
+                    .ok()
+                    .flatten();
 
-        drop(map);
+                drop(map);
 
-        if let Some(message) = message {
-            handler.handle(message, head.object_id);
-        } else {
-            println!("Unhandled message for interface {message:?}: {head:?}");
+                if let Some(message) = message {
+                    handler.handle(message, head.object_id);
+                } else {
+                    println!("Unhandled message for interface {message:?}: {head:?}");
+                }
+                Ok(())
+            }
+            denali_client_core::connection::ConnectionEvent::WorkerTerminated(res) => {
+                if let Err(e) = res {
+                    eprintln!("Worker thread terminated unexpectedly ({e:?})");
+                }
+                Err(DisplayConnectionError::WorkerTerminated)
+            }
+            denali_client_core::connection::ConnectionEvent::TerminationSignalReceived(
+                signal_kind,
+            ) => Err(DisplayConnectionError::SignalReceived(signal_kind)),
         }
     }
 }
@@ -102,4 +128,8 @@ impl DisplayConnection {
 pub enum DisplayConnectionError {
     #[error("Failed to establish unix socket connection to wayland display server.")]
     ConnectError(#[from] std::io::Error),
+    #[error("Connection worker task terminated unexpectedly.")]
+    WorkerTerminated,
+    #[error("Received SIGHUP, SIGINT, or SIGTERM")]
+    SignalReceived(SignalKind),
 }

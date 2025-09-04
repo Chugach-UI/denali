@@ -33,7 +33,9 @@ impl App {
             ZwlrForeignToplevelHandleV1Event<'a>
         );
         loop {
-            conn.handle_event::<Ev<'_>, _>(&mut self).await;
+            if let Err(_) = conn.handle_event::<Ev<'_>, _>(&mut self).await {
+                break;
+            }
         }
     }
 }
@@ -99,7 +101,7 @@ impl Handler<ZwlrForeignToplevelHandleV1Event<'_>> for App {
         let Some(handle) = self.store.get::<ZwlrForeignToplevelHandleV1>(&object_id) else {
             return;
         };
-        
+
         handle.close();
 
         match message {
@@ -109,8 +111,7 @@ impl Handler<ZwlrForeignToplevelHandleV1Event<'_>> for App {
             ZwlrForeignToplevelHandleV1Event::AppId(app_id_event) => {
                 println!("Toplevel app_id changed: {}", app_id_event.app_id.data);
             }
-            ZwlrForeignToplevelHandleV1Event::OutputEnter(output_enter_event) => {
-            }
+            ZwlrForeignToplevelHandleV1Event::OutputEnter(output_enter_event) => {}
             ZwlrForeignToplevelHandleV1Event::OutputLeave(output_leave_event) => {}
             ZwlrForeignToplevelHandleV1Event::State(state_event) => {}
             ZwlrForeignToplevelHandleV1Event::Done(done_event) => {}
@@ -122,7 +123,7 @@ impl Handler<ZwlrForeignToplevelHandleV1Event<'_>> for App {
 
 #[tokio::main]
 async fn main() {
-    let conn = DisplayConnection::new().unwrap();
+    let mut conn = DisplayConnection::new().unwrap();
     let store = conn.create_store();
     let disp = conn.display();
     let reg = disp.registry();
@@ -132,5 +133,5 @@ async fn main() {
         store,
     };
 
-    app.run(conn).await;
+    app.run(&mut conn).await;
 }
