@@ -3,12 +3,11 @@ use std::{collections::BTreeMap, rc::Rc, sync::Mutex};
 use thiserror::Error;
 
 use denali_core::{
-    connection::Connection,
     handler::{Handler, Message},
     id_manager::IdManager,
-    proxy::{InterfaceMap, Proxy},
     wire::serde::Encode,
 };
+use denali_client_core::{connection::Connection, proxy::{InterfaceMap, Proxy}};
 
 use super::protocol::wayland::wl_display::WlDisplay;
 

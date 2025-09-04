@@ -51,15 +51,18 @@ pub fn main() {
         wlr_protocols_unstable_archive_path,
     );
 
-    let generated_code_path = Path::new(&out_dir).join("wayland_client_protocols.rs");
+    let client_code_path = Path::new(&out_dir).join("denali_client_protocols.rs");
     fs::write(
-        generated_code_path,
+        client_code_path,
         format!(
             "denali_macro::wayland_protocols!(\"{}\");",
             protocols_path.to_string_lossy()
         ),
     )
     .unwrap();
+
+    let server_code_path = Path::new(&out_dir).join("denali_server_protocols.rs");
+    fs::write(server_code_path, "pub mod todo {}\n").unwrap();
 }
 
 fn get_file(client: &Client, protocols_path: &Path, file_path: String) {

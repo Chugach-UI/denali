@@ -64,7 +64,8 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
         }
         impl #lifetime denali_core::handler::Message for #name #lifetime {
             fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
-                use denali_core::{wire::serde::Decode, Interface};
+                use denali_core::wire::serde::Decode;
+                use denali_client_core::Interface;
                 if interface != #interface_ident::INTERFACE {
                     return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
                 }
@@ -116,27 +117,27 @@ pub fn build_interface(
 
     quote! {
         #documentation
-        pub struct #name(denali_core::proxy::Proxy);
+        pub struct #name(denali_client_core::proxy::Proxy);
 
         impl #name {
             #(#methods)*
         }
 
-        impl From<denali_core::proxy::Proxy> for #name {
-            fn from(proxy: denali_core::proxy::Proxy) -> Self {
+        impl From<denali_client_core::proxy::Proxy> for #name {
+            fn from(proxy: denali_client_core::proxy::Proxy) -> Self {
                 Self(proxy)
             }
         }
 
-        impl denali_core::Object for #name {
+        impl denali_client_core::Object for #name {
             fn id(&self) -> u32 {
                 self.0.id()
             }
-            fn send_request(&self, request: denali_core::proxy::RequestMessage) {
+            fn send_request(&self, request: denali_client_core::proxy::RequestMessage) {
                 self.0.send_request(request);
             }
         }
-        impl denali_core::Interface for #name {
+        impl denali_client_core::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;

@@ -1,5 +1,6 @@
-use denali_core::{handler::Handler, Interface};
-use denali_wayland::{
+use denali_core::handler::Handler;
+use denali_client_core::Interface;
+use denali_client::{
     display_connection::DisplayConnection,
     protocol::wayland::{
         wl_compositor::WlCompositor,
@@ -58,11 +59,4 @@ async fn main() {
         shm: None,
     };
     app.run(connection).await;
-}
-
-fn randname(buf: &mut [u8]) {}
-
-fn allocate_shm_file() {
-    let mut name = [0u8; 8];
-    randname(&mut name);
 }

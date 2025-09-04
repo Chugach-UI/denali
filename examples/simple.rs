@@ -1,5 +1,4 @@
-use denali_core::{handler::Handler, Interface};
-use denali_wayland::{
+use denali_client::{
     display_connection::DisplayConnection,
     protocol::wayland::{
         wl_compositor::WlCompositor,
@@ -7,6 +6,7 @@ use denali_wayland::{
         wl_registry::{WlRegistry, WlRegistryEvent},
     },
 };
+use denali_core::handler::Handler;
 use frunk::Coprod;
 
 struct App {

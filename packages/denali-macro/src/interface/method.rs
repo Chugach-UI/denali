@@ -61,7 +61,7 @@ fn build_request_method_body(
         quote! {
             let version = #version;
             let new_obj: #return_type = self.0.create_object(version).unwrap();
-            let id = denali_core::Object::id(&new_obj);
+            let id = denali_client_core::Object::id(&new_obj);
 
             #new_id
         }
@@ -69,7 +69,7 @@ fn build_request_method_body(
         quote! {
             let version = #version;
             let new_obj = self.0.create_object_raw(interface, version).unwrap();
-            let id = denali_core::Object::id(&new_obj);
+            let id = denali_client_core::Object::id(&new_obj);
 
             #new_id
         }
@@ -107,7 +107,8 @@ fn build_request_method_body(
     };
 
     let create_request_requirements = quote! {
-        use denali_core::{wire::serde::{MessageSize, CompileTimeMessageSize}, Object};
+        use denali_core::wire::serde::{MessageSize, CompileTimeMessageSize};
+        use denali_client_core::Object;
 
         let request = #request_struct {
             #(#passthrough_args,)*
@@ -123,7 +124,7 @@ fn build_request_method_body(
 
         denali_core::wire::encode_message(&request, object_id, opcode, &mut buffer)?;
 
-        self.send_request(denali_core::proxy::RequestMessage { fds, buffer });
+        self.send_request(denali_client_core::proxy::RequestMessage { fds, buffer });
     };
 
     quote! {
@@ -196,7 +197,7 @@ pub fn build_request_method(
             args.push(quote! { version: u32 });
             arg_names.push(build_ident("version", Case::Snake));
 
-            let generic = quote! { <T: denali_core::Interface> };
+            let generic = quote! { <T: denali_client_core::Interface> };
 
             (generic, quote! { T })
         }
@@ -221,7 +222,7 @@ pub fn build_request_method(
             /// # Errors
             ///
             /// This method will return an error if the request fails to be sent/serialized or if the response cannot be deserialized.
-            pub fn #raw_name (#self_, interface: &str, #(#args),*) -> Result<denali_core::proxy::Proxy, denali_core::wire::serde::SerdeError> {
+            pub fn #raw_name (#self_, interface: &str, #(#args),*) -> Result<denali_client_core::proxy::Proxy, denali_core::wire::serde::SerdeError> {
                 #body
             }
         }
@@ -231,7 +232,7 @@ pub fn build_request_method(
 
     let try_function_body = if has_raw_function {
         quote! {
-            self.#raw_name(<#ret as denali_core::Interface>::INTERFACE, #(#arg_names),*).map(Into::into)
+            self.#raw_name(<#ret as denali_client_core::Interface>::INTERFACE, #(#arg_names),*).map(Into::into)
         }
     } else {
         quote! {

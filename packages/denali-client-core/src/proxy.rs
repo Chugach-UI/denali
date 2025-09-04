@@ -6,13 +6,18 @@ use std::{collections::BTreeMap, os::fd::RawFd, rc::Rc, sync::Mutex};
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{Object, wire::serde::ObjectId};
+use crate::Object;
+use denali_core::{
+    id_manager::{IdManager, IdManagerError},
+    wire::serde::ObjectId,
+};
 
-use super::id_manager::{IdManager, IdManagerError};
-
+/// An internal representation of a wayland message, containing both a buffer of data, and an ancillary buffer of fds.
 #[derive(Debug, Clone)]
 pub struct RequestMessage {
+    /// Fds to be sent over ancillary data.
     pub fds: Vec<RawFd>,
+    /// Primary message contents to be encoded on the wire.
     pub buffer: Vec<u8>,
 }
 

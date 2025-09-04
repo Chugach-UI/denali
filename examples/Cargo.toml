@@ -6,11 +6,11 @@ publish = false
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-denali-core = { workspace = true }
 denali-macro = { workspace = true }
-denali-wayland = { workspace = true }
+denali-core = { workspace = true }
+denali-client-core = { workspace = true }
+denali-client = { workspace = true }
 frunk = { workspace = true }
-xkbcommon-rs = "0.1.2"
 
 [[example]]
 name = "simple"
