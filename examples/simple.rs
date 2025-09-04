@@ -25,7 +25,7 @@ struct App {
     store: Store,
 }
 impl App {
-    pub async fn run(mut self, conn: DisplayConnection) {
+    pub async fn run(mut self, conn: &mut DisplayConnection) {
         type Ev<'a> = Coprod!(
             WlRegistryEvent<'a>,
             WlDisplayEvent<'a>,

@@ -4,10 +4,6 @@ use thiserror::Error;
 
 use denali_client_core::{
     connection::Connection,
-    proxy::{InterfaceMap, Proxy},
-};
-use denali_client_core::{
-    connection::Connection,
     proxy::{InterfaceMap, Proxy, SharedProxyState},
     store::Store,
 };
