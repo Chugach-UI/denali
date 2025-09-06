@@ -16,13 +16,19 @@ use denali_client::{
         },
     },
 };
-use denali_client_core::{store::Store, Interface};
-use denali_core::handler::Handler;
+use denali_core::{
+    handler::HasStoreExt,
+    store::{InterfaceStore, Store},
+};
+use denali_core::{
+    handler::{Handler, HasStore, RawHandler},
+    Interface,
+};
 use frunk::Coprod;
 
 struct App {
     registry: WlRegistry,
-    store: Store,
+    store: InterfaceStore,
 }
 impl App {
     pub async fn run(mut self, conn: &mut DisplayConnection) {
@@ -33,13 +39,22 @@ impl App {
             ZwlrForeignToplevelHandleV1Event<'a>
         );
         loop {
-            if let Err(_) = conn.handle_event::<Ev<'_>, _>(&mut self).await {
+            if (conn.handle_event::<Ev<'_>, _>(&mut self).await).is_err() {
                 break;
             }
         }
     }
 }
-impl Handler<WlRegistryEvent<'_>> for App {
+impl HasStore for App {
+    fn store(&self) -> &impl denali_core::store::Store {
+        &self.store
+    }
+
+    fn store_mut(&mut self) -> &mut impl denali_core::store::Store {
+        &mut self.store
+    }
+}
+impl RawHandler<WlRegistryEvent<'_>> for App {
     fn handle(&mut self, message: WlRegistryEvent, _object_id: denali_core::wire::serde::ObjectId) {
         match message {
             WlRegistryEvent::Global(ev) => {
@@ -47,7 +62,7 @@ impl Handler<WlRegistryEvent<'_>> for App {
                     let mgr = self
                         .registry
                         .bind::<ZwlrForeignToplevelManagerV1>(ev.name, ev.version);
-                    self.store.insert_interface(mgr, ev.version);
+                    self.insert_interface(mgr, ev.version);
                 }
             }
             WlRegistryEvent::GlobalRemove(ev) => {
@@ -56,7 +71,7 @@ impl Handler<WlRegistryEvent<'_>> for App {
         }
     }
 }
-impl Handler<WlDisplayEvent<'_>> for App {
+impl RawHandler<WlDisplayEvent<'_>> for App {
     fn handle(&mut self, message: WlDisplayEvent, object_id: denali_core::wire::serde::ObjectId) {
         match message {
             WlDisplayEvent::Error(error_event) => {
@@ -72,7 +87,7 @@ impl Handler<WlDisplayEvent<'_>> for App {
     }
 }
 
-impl Handler<ZwlrForeignToplevelManagerV1Event> for App {
+impl RawHandler<ZwlrForeignToplevelManagerV1Event> for App {
     fn handle(
         &mut self,
         message: ZwlrForeignToplevelManagerV1Event,
@@ -96,14 +111,8 @@ impl Handler<ZwlrForeignToplevelHandleV1Event<'_>> for App {
     fn handle(
         &mut self,
         message: ZwlrForeignToplevelHandleV1Event,
-        object_id: denali_core::wire::serde::ObjectId,
+        handle: &ZwlrForeignToplevelHandleV1,
     ) {
-        let Some(handle) = self.store.get::<ZwlrForeignToplevelHandleV1>(&object_id) else {
-            return;
-        };
-
-        handle.close();
-
         match message {
             ZwlrForeignToplevelHandleV1Event::Title(title_event) => {
                 println!("Toplevel title changed: {}", title_event.title.data);

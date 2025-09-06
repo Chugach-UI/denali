@@ -1,11 +1,20 @@
 use std::collections::BTreeMap;
 
-use denali_core::wire::serde::ObjectId;
+use crate::wire::serde::ObjectId;
 
-use crate::{
-    Interface,
-    proxy::{Proxy, ProxyUpcast, SharedProxyState},
-};
+use crate::Interface;
+use crate::proxy::{Proxy, ProxyUpcast, SharedProxyState};
+
+pub trait Store {
+    /// Insert a new object into the store.
+    fn insert_interface<I: Interface>(&mut self, interface: I, version: u32);
+    /// Take ownership of an object by its ID, if it exists and matches the requested interface and version.
+    fn take<I: Interface>(&mut self, id: &ObjectId) -> Option<I>;
+    /// Get a reference to an object by its ID, if it exists and matches the requested interface and version.
+    fn get<I: Interface + ProxyUpcast>(&self, id: &ObjectId) -> Option<&I>;
+    /// Get references to all objects that match the requested interface and version.
+    fn get_all<I: Interface + ProxyUpcast>(&self) -> Vec<&I>;
+}
 
 #[derive(Debug, Clone)]
 struct Object {
@@ -18,11 +27,11 @@ struct Object {
 ///
 /// Stores can be created with the DisplayConnection
 #[derive(Debug, Clone)]
-pub struct Store {
+pub struct InterfaceStore {
     objects: BTreeMap<ObjectId, Object>,
     shared_state: SharedProxyState,
 }
-impl Store {
+impl InterfaceStore {
     /// Create a new empty store with the given shared proxy state.
     #[must_use]
     pub const fn new(state: SharedProxyState) -> Self {
@@ -115,5 +124,23 @@ impl Store {
                 Some(I::upcast_ref(&obj.proxy))
             })
             .collect()
+    }
+}
+
+impl Store for InterfaceStore {
+    fn get<I: Interface + ProxyUpcast>(&self, id: &ObjectId) -> Option<&I> {
+        self.get(id)
+    }
+
+    fn get_all<I: Interface + ProxyUpcast>(&self) -> Vec<&I> {
+        self.get_all()
+    }
+
+    fn insert_interface<I: Interface>(&mut self, interface: I, version: u32) {
+        self.insert_interface(interface, version);
+    }
+
+    fn take<I: Interface>(&mut self, id: &ObjectId) -> Option<I> {
+        self.take(id)
     }
 }

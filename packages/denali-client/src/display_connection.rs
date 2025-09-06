@@ -2,15 +2,16 @@ use std::{collections::BTreeMap, rc::Rc, sync::Mutex};
 
 use thiserror::Error;
 
-use denali_client_core::{
-    connection::Connection,
-    proxy::{InterfaceMap, Proxy, SharedProxyState},
-    store::Store,
+use denali_client_core::connection::Connection;
+use denali_core::{
+    handler::{Message, RawHandler},
+    id_manager::IdManager,
+    store::InterfaceStore,
+    wire::serde::Encode,
 };
 use denali_core::{
-    handler::{Handler, Message},
-    id_manager::IdManager,
-    wire::serde::Encode,
+    proxy::{InterfaceMap, Proxy, SharedProxyState},
+    store::Store,
 };
 use tokio::signal::unix::SignalKind;
 
@@ -58,8 +59,8 @@ impl DisplayConnection {
 
     /// Creates a new Store associated with this connection.
     #[must_use]
-    pub fn create_store(&self) -> Store {
-        Store::new(self.shared_state.clone())
+    pub fn create_store(&self) -> InterfaceStore {
+        InterfaceStore::new(self.shared_state.clone())
     }
 
     #[must_use]
@@ -67,7 +68,7 @@ impl DisplayConnection {
         &self.display
     }
 
-    pub async fn handle_event<M: Message + std::fmt::Debug, H: Handler<M>>(
+    pub async fn handle_event<M: Message + std::fmt::Debug, H: RawHandler<M>>(
         &mut self,
         handler: &mut H,
     ) -> Result<(), DisplayConnectionError> {

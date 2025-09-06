@@ -17,7 +17,7 @@ use tokio_seqpacket::{
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
 
-use crate::{proxy::{RequestMessage, SharedProxyState}, store::Store};
+use denali_core::proxy::RequestMessage;
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
 
 /// A connection to a Wayland server.
@@ -66,12 +66,8 @@ impl Connection {
 
         let worker_handle = tokio::task::spawn(async move {
             while let Some(msg) = request_receiver.recv().await {
-                if let Err(e) = send
-                    .send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
-                    .await
-                {
-                    return Err(e);
-                }
+                send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
+                    .await?;
             }
             Ok(())
         });

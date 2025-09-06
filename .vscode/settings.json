@@ -1,4 +1,5 @@
 {
     "rust-analyzer.cargo.cfgs": [],
     "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.cargo.allTargets": true
 }

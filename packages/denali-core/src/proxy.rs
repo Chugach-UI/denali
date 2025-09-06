@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, os::fd::RawFd, rc::Rc, sync::Mutex};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::Object;
-use denali_core::{
+use crate::{
     id_manager::{IdManager, IdManagerError},
     wire::serde::ObjectId,
 };

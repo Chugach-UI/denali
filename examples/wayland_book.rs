@@ -1,5 +1,3 @@
-use denali_core::handler::Handler;
-use denali_client_core::Interface;
 use denali_client::{
     display_connection::DisplayConnection,
     protocol::wayland::{
@@ -8,6 +6,8 @@ use denali_client::{
         wl_shm::{WlShm, WlShmEvent},
     },
 };
+use denali_client_core::Interface;
+use denali_core::handler::RawHandler;
 use frunk::Coprod;
 
 struct App {
@@ -25,7 +25,7 @@ impl App {
     }
 }
 
-impl Handler<WlRegistryEvent<'_>> for App {
+impl RawHandler<WlRegistryEvent<'_>> for App {
     fn handle(
         &mut self,
         message: WlRegistryEvent<'_>,
@@ -43,7 +43,7 @@ impl Handler<WlRegistryEvent<'_>> for App {
     }
 }
 
-impl Handler<WlShmEvent> for App {
+impl RawHandler<WlShmEvent> for App {
     fn handle(&mut self, message: WlShmEvent, object_id: denali_core::wire::serde::ObjectId) {
         _ = message;
         _ = object_id;

@@ -10,7 +10,7 @@ use crate::{
     build_ident,
     helpers::build_documentation,
     interface::method::build_request_method,
-    protocol_parser::{Element, Event, Interface, Request},
+    protocol_parser::{Element, Event, Interface},
     wire::{build_enum, build_event, build_request},
 };
 
@@ -65,7 +65,7 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
         impl #lifetime denali_core::handler::Message for #name #lifetime {
             fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
                 use denali_core::wire::serde::Decode;
-                use denali_client_core::Interface;
+                use denali_core::Interface;
                 if interface != #interface_ident::INTERFACE {
                     return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
                 }
@@ -75,6 +75,9 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
                     _ => Err(denali_core::handler::DecodeMessageError::UnknownOpcode(opcode)),
                 }
             }
+        }
+        impl #lifetime denali_core::handler::MessageTarget for #name #lifetime {
+            type Target = #interface_ident;
         }
     }
 }
@@ -142,18 +145,18 @@ pub fn build_interface(
     quote! {
         #documentation
         #[repr(transparent)]
-        pub struct #name(denali_client_core::proxy::Proxy);
+        pub struct #name(denali_core::proxy::Proxy);
 
         impl #name {
             #(#methods)*
         }
 
-        impl From<denali_client_core::proxy::Proxy> for #name {
-            fn from(proxy: denali_client_core::proxy::Proxy) -> Self {
+        impl From<denali_core::proxy::Proxy> for #name {
+            fn from(proxy: denali_core::proxy::Proxy) -> Self {
                 Self(proxy)
             }
         }
-        impl From<#name> for denali_client_core::proxy::Proxy {
+        impl From<#name> for denali_core::proxy::Proxy {
             fn from(iface: #name) -> Self {
                 let manual = std::mem::ManuallyDrop::new(iface);
                 // SAFETY: We're taking ownership of the inner value and preventing
@@ -164,21 +167,21 @@ pub fn build_interface(
 
         #drop_impl
 
-        impl denali_client_core::Object for #name {
+        impl denali_core::Object for #name {
             fn id(&self) -> u32 {
                 self.0.id()
             }
-            fn send_request(&self, request: denali_client_core::proxy::RequestMessage) {
+            fn send_request(&self, request: denali_core::proxy::RequestMessage) {
                 self.0.send_request(request);
             }
         }
-        impl denali_client_core::Interface for #name {
+        impl denali_core::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;
         }
-        unsafe impl denali_client_core::proxy::ProxyUpcast for #name {
-            fn upcast_ref(proxy: &denali_client_core::proxy::Proxy) -> &Self {
+        unsafe impl denali_core::proxy::ProxyUpcast for #name {
+            fn upcast_ref(proxy: &denali_core::proxy::Proxy) -> &Self {
                 //SAFETY: Proxy and all generated interface structs are repr(transparent) wrappers over Proxy
                 unsafe { std::mem::transmute(proxy) }
             }
