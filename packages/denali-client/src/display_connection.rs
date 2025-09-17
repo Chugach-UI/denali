@@ -2,7 +2,6 @@ use std::{collections::BTreeMap, rc::Rc, sync::Mutex};
 
 use thiserror::Error;
 
-use denali_client_core::connection::Connection;
 use denali_core::{
     handler::{Message, RawHandler},
     id_manager::IdManager,
@@ -14,6 +13,8 @@ use denali_core::{
     store::Store,
 };
 use tokio::signal::unix::SignalKind;
+
+use crate::connection::{Connection, ConnectionEvent};
 
 use super::protocol::wayland::wl_display::WlDisplay;
 
@@ -75,7 +76,7 @@ impl DisplayConnection {
 
     pub async fn next_event(&mut self) -> Result<Event, DisplayConnectionError> {
         match self.connection.wait_next_event().await {
-            denali_client_core::connection::ConnectionEvent::WaylandMessage(head) => {
+           ConnectionEvent::WaylandMessage(head) => {
                 let head = head.unwrap();
                 let size = head.size as usize - 8;
                 let mut buf = vec![0u8; size];
@@ -91,13 +92,13 @@ impl DisplayConnection {
                     body: buf,
                 })
             }
-            denali_client_core::connection::ConnectionEvent::WorkerTerminated(res) => {
+            ConnectionEvent::WorkerTerminated(res) => {
                 if let Err(e) = res {
                     eprintln!("Worker thread terminated unexpectedly ({e:?})");
                 }
                 Err(DisplayConnectionError::WorkerTerminated)
             }
-            denali_client_core::connection::ConnectionEvent::TerminationSignalReceived(
+            ConnectionEvent::TerminationSignalReceived(
                 signal_kind,
             ) => Err(DisplayConnectionError::SignalReceived(signal_kind)),
         }

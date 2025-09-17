@@ -5,11 +5,12 @@ edition = "2024"
 
 [dependencies]
 denali-core = { workspace = true }
-denali-client-core = { workspace = true }
 denali-protocol = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 frunk = { workspace = true }
+log = "0.4.28"
+tokio-seqpacket = { workspace = true }
 
 [lints]
 workspace = true

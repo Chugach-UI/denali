@@ -8,7 +8,6 @@ publish = false
 tokio = { workspace = true, features = ["full"] }
 denali-macro = { workspace = true }
 denali-core = { workspace = true }
-denali-client-core = { workspace = true }
 denali-client = { workspace = true }
 frunk = { workspace = true }
 

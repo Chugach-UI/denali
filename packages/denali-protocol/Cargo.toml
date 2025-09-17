@@ -6,8 +6,6 @@ edition = "2024"
 [dependencies]
 denali-macro = { workspace = true }
 denali-core = { workspace = true }
-denali-client-core = { workspace = true }
-denali-server-core = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]

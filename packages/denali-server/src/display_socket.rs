@@ -1,4 +1,4 @@
-use denali_server_core::socket::Socket;
+use crate::socket::Socket;
 
 pub struct DisplaySocket {
     socket: Socket,
