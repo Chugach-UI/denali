@@ -22,6 +22,7 @@ use denali_core::proxy::RequestMessage;
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
 
 /// A connection to a Wayland server.
+#[derive(Debug)]
 pub struct Connection {
     recv: RecvSocket,
     request_sender: mpsc::UnboundedSender<RequestMessage>,
@@ -200,6 +201,7 @@ pub enum SendSocketError {
     IoError(#[from] std::io::Error),
 }
 
+#[derive(Debug)]
 pub struct RecvSocket(UnixSeqpacket);
 
 impl RecvSocket {

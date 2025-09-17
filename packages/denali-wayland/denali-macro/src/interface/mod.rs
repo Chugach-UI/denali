@@ -145,6 +145,7 @@ pub fn build_interface(
     quote! {
         #documentation
         #[repr(transparent)]
+        #[derive(Debug)]
         pub struct #name(denali_core::proxy::Proxy);
 
         impl #name {

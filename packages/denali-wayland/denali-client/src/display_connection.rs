@@ -19,10 +19,12 @@ use crate::connection::{Connection, ConnectionEvent};
 use super::protocol::wayland::wl_display::WlDisplay;
 
 pub struct Event {
+    pub interface: String,
     pub header: MessageHeader,
     pub body: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct DisplayConnection {
     display: WlDisplay,
     connection: Connection,
@@ -76,7 +78,7 @@ impl DisplayConnection {
 
     pub async fn next_event(&mut self) -> Result<Event, DisplayConnectionError> {
         match self.connection.wait_next_event().await {
-           ConnectionEvent::WaylandMessage(head) => {
+            ConnectionEvent::WaylandMessage(head) => {
                 let head = head.unwrap();
                 let size = head.size as usize - 8;
                 let mut buf = vec![0u8; size];
@@ -87,7 +89,12 @@ impl DisplayConnection {
                     .await
                     .unwrap();
 
+                let map = self.shared_state.interface_map.lock().unwrap();
+                let interface = map.get(&head.object_id).unwrap().clone();
+                drop(map);
+
                 Ok(Event {
+                    interface: interface.clone(),
                     header: head,
                     body: buf,
                 })
@@ -98,9 +105,9 @@ impl DisplayConnection {
                 }
                 Err(DisplayConnectionError::WorkerTerminated)
             }
-            ConnectionEvent::TerminationSignalReceived(
-                signal_kind,
-            ) => Err(DisplayConnectionError::SignalReceived(signal_kind)),
+            ConnectionEvent::TerminationSignalReceived(signal_kind) => {
+                Err(DisplayConnectionError::SignalReceived(signal_kind))
+            }
         }
     }
 
@@ -110,11 +117,7 @@ impl DisplayConnection {
     ) -> Result<(), DisplayConnectionError> {
         let event = self.next_event().await?;
 
-        let map = self.shared_state.interface_map.lock().unwrap();
-        let message = map
-            .get(&event.header.object_id)
-            .map(|iface| M::try_decode(iface, event.header.opcode, &event.body))
-            .transpose()
+        let message = M::try_decode(&event.interface, event.header.opcode, &event.body)
             .map_err(|e| {
                 println!(
                     "Failed to decode message for interface {e:?}: {:?}",
@@ -122,10 +125,7 @@ impl DisplayConnection {
                 );
                 e
             })
-            .ok()
-            .flatten();
-
-        drop(map);
+            .ok();
 
         if let Some(message) = message {
             handler.handle(message, event.header.object_id);
