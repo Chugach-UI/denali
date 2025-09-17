@@ -7,7 +7,7 @@ use denali_core::{
     handler::{Message, RawHandler},
     id_manager::IdManager,
     store::InterfaceStore,
-    wire::serde::Encode,
+    wire::serde::{Encode, MessageHeader},
 };
 use denali_core::{
     proxy::{InterfaceMap, Proxy, SharedProxyState},
@@ -16,6 +16,11 @@ use denali_core::{
 use tokio::signal::unix::SignalKind;
 
 use super::protocol::wayland::wl_display::WlDisplay;
+
+pub struct Event {
+    pub header: MessageHeader,
+    pub body: Vec<u8>,
+}
 
 pub struct DisplayConnection {
     display: WlDisplay,
@@ -68,10 +73,7 @@ impl DisplayConnection {
         &self.display
     }
 
-    pub async fn handle_event<M: Message + std::fmt::Debug, H: RawHandler<M>>(
-        &mut self,
-        handler: &mut H,
-    ) -> Result<(), DisplayConnectionError> {
+    pub async fn next_event(&mut self) -> Result<Event, DisplayConnectionError> {
         match self.connection.wait_next_event().await {
             denali_client_core::connection::ConnectionEvent::WaylandMessage(head) => {
                 let head = head.unwrap();
@@ -84,29 +86,10 @@ impl DisplayConnection {
                     .await
                     .unwrap();
 
-                let mut head_buf = [0u8; 8];
-                head.encode(&mut head_buf).unwrap();
-
-                let map = self.shared_state.interface_map.lock().unwrap();
-                let message = map
-                    .get(&head.object_id)
-                    .map(|iface| M::try_decode(iface, head.opcode, &buf))
-                    .transpose()
-                    .map_err(|e| {
-                        println!("Failed to decode message for interface {e:?}: {head:?}");
-                        e
-                    })
-                    .ok()
-                    .flatten();
-
-                drop(map);
-
-                if let Some(message) = message {
-                    handler.handle(message, head.object_id);
-                } else {
-                    println!("Unhandled message for interface {message:?}: {head:?}");
-                }
-                Ok(())
+                Ok(Event {
+                    header: head,
+                    body: buf,
+                })
             }
             denali_client_core::connection::ConnectionEvent::WorkerTerminated(res) => {
                 if let Err(e) = res {
@@ -118,6 +101,40 @@ impl DisplayConnection {
                 signal_kind,
             ) => Err(DisplayConnectionError::SignalReceived(signal_kind)),
         }
+    }
+
+    pub async fn handle_event<M: Message + std::fmt::Debug, H: RawHandler<M>>(
+        &mut self,
+        handler: &mut H,
+    ) -> Result<(), DisplayConnectionError> {
+        let event = self.next_event().await?;
+
+        let map = self.shared_state.interface_map.lock().unwrap();
+        let message = map
+            .get(&event.header.object_id)
+            .map(|iface| M::try_decode(iface, event.header.opcode, &event.body))
+            .transpose()
+            .map_err(|e| {
+                println!(
+                    "Failed to decode message for interface {e:?}: {:?}",
+                    event.header
+                );
+                e
+            })
+            .ok()
+            .flatten();
+
+        drop(map);
+
+        if let Some(message) = message {
+            handler.handle(message, event.header.object_id);
+        } else {
+            println!(
+                "Unhandled message for interface {message:?}: {:?}",
+                event.header
+            );
+        }
+        Ok(())
     }
 }
 

@@ -6,8 +6,8 @@ use denali_client::{
         wl_shm::{WlShm, WlShmEvent},
     },
 };
-use denali_client_core::Interface;
 use denali_core::handler::RawHandler;
+use denali_core::Interface;
 use frunk::Coprod;
 
 struct App {
@@ -17,7 +17,7 @@ struct App {
 }
 
 impl App {
-    pub async fn run(mut self, connection: DisplayConnection) {
+    pub async fn run(mut self, mut connection: DisplayConnection) {
         type Ev<'a> = Coprod!(WlRegistryEvent<'a>, WlShmEvent);
         loop {
             connection.handle_event::<Ev<'_>, _>(&mut self).await;

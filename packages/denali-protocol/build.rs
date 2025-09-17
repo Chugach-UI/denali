@@ -88,14 +88,14 @@ fn unpack_protocols_tar(client: &Client, protocols_path: &Path, archive_path: St
     let mut archive = Archive::new(tar);
 
     for entry in archive.entries().unwrap() {
-        let mut unwrapped = entry.unwrap();
-        let path = unwrapped.path().unwrap();
+        let mut entry = entry.unwrap();
+        let path = entry.path().unwrap();
         if let Some(ext) = path.extension()
             && let Some(name) = path.file_name()
             && ext == "xml"
             && !protocol_blacklist.contains(&name.to_string_lossy().into_owned().as_str())
         {
-            unwrapped.unpack(protocols_path.join(name)).unwrap();
+            entry.unpack(protocols_path.join(name)).unwrap();
         }
     }
 }

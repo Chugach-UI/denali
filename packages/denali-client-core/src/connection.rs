@@ -16,6 +16,7 @@ use tokio_seqpacket::{
     UnixSeqpacket,
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
+use log::error;
 
 use denali_core::proxy::RequestMessage;
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
@@ -105,19 +106,19 @@ impl Connection {
                 ConnectionEvent::WaylandMessage(head)
             },
             Ok(res) = &mut self.worker_handle => {
-                eprintln!("Worker task terminated.");
+                error!("Worker task terminated.");
                 ConnectionEvent::WorkerTerminated(res)
             },
             _ = self.sighup.recv() => {
-                eprintln!("Received SIGHUP");
+                error!("Received SIGHUP");
                 ConnectionEvent::TerminationSignalReceived(SignalKind::hangup())
             },
             _ = self.sigterm.recv() => {
-                eprintln!("Received SIGTERM");
+                error!("Received SIGTERM");
                 ConnectionEvent::TerminationSignalReceived(SignalKind::terminate())
             },
             _ = self.sigint.recv() => {
-                eprintln!("Received SIGINT");
+                error!("Received SIGINT");
                 ConnectionEvent::TerminationSignalReceived(SignalKind::interrupt())
             },
         }

@@ -1,42 +1,20 @@
 use denali_client::{
     display_connection::DisplayConnection,
-    protocol::{
-        wayland::{
-            wl_compositor::WlCompositor,
-            wl_display::WlDisplayEvent,
-            wl_registry::{WlRegistry, WlRegistryEvent},
-        },
-        wlr_foreign_toplevel_management_unstable_v1::{
-            zwlr_foreign_toplevel_handle_v1::{
-                ZwlrForeignToplevelHandleV1, ZwlrForeignToplevelHandleV1Event,
-            },
-            zwlr_foreign_toplevel_manager_v1::{
-                ZwlrForeignToplevelManagerV1, ZwlrForeignToplevelManagerV1Event,
-            },
-        },
-    },
+    protocol::wayland::wl_registry::{WlRegistry, WlRegistryEvent},
 };
-use denali_core::{
-    handler::HasStoreExt,
-    store::{InterfaceStore, Store},
-};
-use denali_core::{
-    handler::{Handler, HasStore, RawHandler},
-    Interface,
-};
+use denali_core::store::{InterfaceStore, Store};
+use denali_core::
+    handler::{Handler, HasStore}
+;
 use frunk::Coprod;
 
 struct App {
-    registry: WlRegistry,
     store: InterfaceStore,
 }
 impl App {
     pub async fn run(mut self, conn: &mut DisplayConnection) {
         type Ev<'a> = Coprod!(
             WlRegistryEvent<'a>,
-            WlDisplayEvent<'a>,
-            ZwlrForeignToplevelManagerV1Event,
-            ZwlrForeignToplevelHandleV1Event<'a>
         );
         loop {
             if (conn.handle_event::<Ev<'_>, _>(&mut self).await).is_err() {
@@ -54,16 +32,12 @@ impl HasStore for App {
         &mut self.store
     }
 }
-impl RawHandler<WlRegistryEvent<'_>> for App {
-    fn handle(&mut self, message: WlRegistryEvent, _object_id: denali_core::wire::serde::ObjectId) {
+impl Handler<WlRegistryEvent<'_>> for App {
+    fn handle(&mut self, message: WlRegistryEvent, registry: &WlRegistry) {
         match message {
             WlRegistryEvent::Global(ev) => {
-                if ev.interface.data == ZwlrForeignToplevelManagerV1::INTERFACE {
-                    let mgr = self
-                        .registry
-                        .bind::<ZwlrForeignToplevelManagerV1>(ev.name, ev.version);
-                    self.insert_interface(mgr, ev.version);
-                }
+                let obj = registry.bind_raw(&ev.interface.data, ev.name, ev.version).unwrap();
+                self.store.insert_proxy(ev.interface.data.to_string(), obj.version(), obj);
             }
             WlRegistryEvent::GlobalRemove(ev) => {
                 println!("Removed global: {}", ev.name);
@@ -71,74 +45,17 @@ impl RawHandler<WlRegistryEvent<'_>> for App {
         }
     }
 }
-impl RawHandler<WlDisplayEvent<'_>> for App {
-    fn handle(&mut self, message: WlDisplayEvent, object_id: denali_core::wire::serde::ObjectId) {
-        match message {
-            WlDisplayEvent::Error(error_event) => {
-                eprintln!(
-                    "Display error on object {}: code {}, message: {}",
-                    object_id, error_event.code, error_event.message.data
-                );
-            }
-            WlDisplayEvent::DeleteId(delete_id_event) => {
-                println!("Display deleted id: {}", delete_id_event.id);
-            }
-        }
-    }
-}
 
-impl RawHandler<ZwlrForeignToplevelManagerV1Event> for App {
-    fn handle(
-        &mut self,
-        message: ZwlrForeignToplevelManagerV1Event,
-        object_id: denali_core::wire::serde::ObjectId,
-    ) {
-        match message {
-            ZwlrForeignToplevelManagerV1Event::Toplevel(toplevel_event) => {
-                self.store.insert(
-                    toplevel_event.toplevel,
-                    1,
-                    ZwlrForeignToplevelHandleV1::INTERFACE.to_string(),
-                );
-            }
-            ZwlrForeignToplevelManagerV1Event::Finished(finished_event) => {
-                println!("Foreign toplevel manager finished: {:?}", finished_event);
-            }
-        }
-    }
-}
-impl Handler<ZwlrForeignToplevelHandleV1Event<'_>> for App {
-    fn handle(
-        &mut self,
-        message: ZwlrForeignToplevelHandleV1Event,
-        handle: &ZwlrForeignToplevelHandleV1,
-    ) {
-        match message {
-            ZwlrForeignToplevelHandleV1Event::Title(title_event) => {
-                println!("Toplevel title changed: {}", title_event.title.data);
-            }
-            ZwlrForeignToplevelHandleV1Event::AppId(app_id_event) => {
-                println!("Toplevel app_id changed: {}", app_id_event.app_id.data);
-            }
-            ZwlrForeignToplevelHandleV1Event::OutputEnter(output_enter_event) => {}
-            ZwlrForeignToplevelHandleV1Event::OutputLeave(output_leave_event) => {}
-            ZwlrForeignToplevelHandleV1Event::State(state_event) => {}
-            ZwlrForeignToplevelHandleV1Event::Done(done_event) => {}
-            ZwlrForeignToplevelHandleV1Event::Closed(closed_event) => {}
-            ZwlrForeignToplevelHandleV1Event::Parent(parent_event) => {}
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() {
     let mut conn = DisplayConnection::new().unwrap();
-    let store = conn.create_store();
+    let mut store = conn.create_store();
     let disp = conn.display();
     let reg = disp.registry();
+    store.insert_interface(reg, 1);
 
     let app = App {
-        registry: reg,
         store,
     };
 
