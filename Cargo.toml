@@ -12,10 +12,12 @@ denali-core = { path = "packages/denali-wayland/denali-core" }
 denali-protocol = { path = "packages/denali-wayland/denali-protocol" }
 denali-client = { path = "packages/denali-wayland/denali-client" }
 denali-server = { path = "packages/denali-wayland/denali-server" }
+chugach-windowing = { path = "packages/chugach/chugach-windowing" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread", "signal", "macros"] }
 tokio-seqpacket = "0.8.0"
 frunk = "0.4.4"
+tracing = "0.1.41"
 
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }

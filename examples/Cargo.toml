@@ -9,7 +9,10 @@ tokio = { workspace = true, features = ["full"] }
 denali-macro = { workspace = true }
 denali-core = { workspace = true }
 denali-client = { workspace = true }
+chugach-windowing = { workspace = true }
 frunk = { workspace = true }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
+tracing = { workspace = true }
 
 [[example]]
 name = "simple"
@@ -20,5 +23,5 @@ name = "wayland_book"
 path = "wayland_book.rs"
 
 [[example]]
-name = "bluh"
-path = "bluh.rs"
+name = "create_window"
+path = "create_window.rs"

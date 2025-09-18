@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 denali-client = { workspace = true }
 thiserror = { workspace = true }
-log = "0.4.28"
 frunk = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

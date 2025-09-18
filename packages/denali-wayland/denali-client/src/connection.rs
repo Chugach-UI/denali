@@ -9,17 +9,17 @@ use std::{
 
 use thiserror::Error;
 use tokio::{
-    signal::unix::{Signal, SignalKind, signal},
-    sync::mpsc::{self, UnboundedSender},
+    select, signal::unix::{signal, Signal, SignalKind}, sync::mpsc::{self, UnboundedSender}
 };
 use tokio_seqpacket::{
     UnixSeqpacket,
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
-use log::error;
+use tracing::error;
 
 use denali_core::proxy::RequestMessage;
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
+use tokio_util::sync::CancellationToken;
 
 /// A connection to a Wayland server.
 #[derive(Debug)]
@@ -27,9 +27,7 @@ pub struct Connection {
     recv: RecvSocket,
     request_sender: mpsc::UnboundedSender<RequestMessage>,
     worker_handle: tokio::task::JoinHandle<Result<(), SendSocketError>>,
-    sighup: Signal,
-    sigterm: Signal,
-    sigint: Signal,
+    cancel_token: CancellationToken,
 }
 
 impl Connection {
@@ -66,25 +64,36 @@ impl Connection {
 
         let (request_sender, mut request_receiver) = mpsc::unbounded_channel::<RequestMessage>();
 
+        let token = CancellationToken::new();
+        let worker_token = token.clone();
+
         let worker_handle = tokio::task::spawn(async move {
-            while let Some(msg) = request_receiver.recv().await {
-                send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
-                    .await?;
+            loop {
+                select! {
+                    () = worker_token.cancelled() => {
+                        break;
+                    }
+                    res = request_receiver.recv() => {
+                        match res {
+                            Some(msg) => {
+                                if let Err(e) = send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice()).await {
+                                    error!("Failed to send message to Wayland server: {e}");
+                                    return Err(e);
+                                }
+                            }
+                            None => break, // Channel closed, exit the loop
+                        }
+                    }
+                }
             }
             Ok(())
         });
-
-        let sighup = signal(SignalKind::hangup()).unwrap();
-        let sigterm = signal(SignalKind::terminate()).unwrap();
-        let sigint = signal(SignalKind::interrupt()).unwrap();
 
         Ok(Self {
             recv,
             request_sender,
             worker_handle,
-            sighup,
-            sigterm,
-            sigint,
+            cancel_token: token,
         })
     }
 
@@ -110,26 +119,19 @@ impl Connection {
                 error!("Worker task terminated.");
                 ConnectionEvent::WorkerTerminated(res)
             },
-            _ = self.sighup.recv() => {
-                error!("Received SIGHUP");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::hangup())
-            },
-            _ = self.sigterm.recv() => {
-                error!("Received SIGTERM");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::terminate())
-            },
-            _ = self.sigint.recv() => {
-                error!("Received SIGINT");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::interrupt())
-            },
         }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.cancel_token.cancel();
     }
 }
 
 pub enum ConnectionEvent {
     WaylandMessage(Result<MessageHeader, RecvSocketError>),
     WorkerTerminated(Result<(), SendSocketError>),
-    TerminationSignalReceived(SignalKind),
 }
 
 /// Errors that can occur when establishing a connection to a Wayland server.

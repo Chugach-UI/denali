@@ -19,7 +19,7 @@ use crate::connection::{Connection, ConnectionEvent};
 use super::protocol::wayland::wl_display::WlDisplay;
 
 pub struct Event {
-    pub interface: String,
+    pub interface: Option<String>,
     pub header: MessageHeader,
     pub body: Vec<u8>,
 }
@@ -90,23 +90,23 @@ impl DisplayConnection {
                     .unwrap();
 
                 let map = self.shared_state.interface_map.lock().unwrap();
-                let interface = map.get(&head.object_id).unwrap().clone();
+                let interface = map.get(&head.object_id).cloned();
+                if interface.is_none() {
+                    tracing::warn!("No interface found for object {}", head.object_id);
+                }
                 drop(map);
 
                 Ok(Event {
-                    interface: interface.clone(),
+                    interface,
                     header: head,
                     body: buf,
                 })
             }
             ConnectionEvent::WorkerTerminated(res) => {
                 if let Err(e) = res {
-                    eprintln!("Worker thread terminated unexpectedly ({e:?})");
+                    tracing::error!("Worker thread terminated unexpectedly ({e:?})");
                 }
                 Err(DisplayConnectionError::WorkerTerminated)
-            }
-            ConnectionEvent::TerminationSignalReceived(signal_kind) => {
-                Err(DisplayConnectionError::SignalReceived(signal_kind))
             }
         }
     }
@@ -117,15 +117,23 @@ impl DisplayConnection {
     ) -> Result<(), DisplayConnectionError> {
         let event = self.next_event().await?;
 
-        let message = M::try_decode(&event.interface, event.header.opcode, &event.body)
-            .map_err(|e| {
-                println!(
-                    "Failed to decode message for interface {e:?}: {:?}",
-                    event.header
-                );
-                e
-            })
-            .ok();
+        let message = M::try_decode(
+            &event
+                .interface
+                .ok_or(DisplayConnectionError::UnknownObjectId(
+                    event.header.object_id,
+                ))?,
+            event.header.opcode,
+            &event.body,
+        )
+        .map_err(|e| {
+            println!(
+                "Failed to decode message for interface {e:?}: {:?}",
+                event.header
+            );
+            e
+        })
+        .ok();
 
         if let Some(message) = message {
             handler.handle(message, event.header.object_id);
@@ -141,10 +149,10 @@ impl DisplayConnection {
 
 #[derive(Debug, Error)]
 pub enum DisplayConnectionError {
+    #[error("No interface found for object ID {0}.")]
+    UnknownObjectId(u32),
     #[error("Failed to establish unix socket connection to wayland display server.")]
     ConnectError(#[from] std::io::Error),
     #[error("Connection worker task terminated unexpectedly.")]
     WorkerTerminated,
-    #[error("Received SIGHUP, SIGINT, or SIGTERM")]
-    SignalReceived(SignalKind),
 }
