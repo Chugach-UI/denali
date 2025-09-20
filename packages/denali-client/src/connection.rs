@@ -16,7 +16,7 @@ use tokio_seqpacket::{
     UnixSeqpacket,
     ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
 };
-use log::error;
+use tracing::error;
 
 use denali_core::proxy::RequestMessage;
 use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};

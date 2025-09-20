@@ -9,7 +9,7 @@ denali-protocol = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 frunk = { workspace = true }
-log = "0.4.28"
+tracing = { workspace = true }
 tokio-seqpacket = { workspace = true }
 
 [lints]
