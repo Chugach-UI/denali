@@ -3,10 +3,14 @@
 use std::{
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
-    os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd},
+    os::{
+        fd::{BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
+        unix::net::UnixStream,
+    },
     path::PathBuf,
 };
 
+use log::error;
 use thiserror::Error;
 use tokio::{
     signal::unix::{Signal, SignalKind, signal},
@@ -38,30 +42,7 @@ impl Connection {
     ///
     /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
     pub fn new() -> Result<Self, ConnectionError> {
-        let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".to_string());
-        let mut wayland_display = PathBuf::from(wayland_display);
-        if !wayland_display.is_absolute() {
-            let xdg_runtime_dir =
-                env::var("XDG_RUNTIME_DIR").map_err(|_| ConnectionError::NoXdgRuntimeDir)?;
-            let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
-            wayland_display = xdg_runtime_dir.join(wayland_display);
-        }
-
-        let stream = std::os::unix::net::UnixStream::connect(wayland_display)
-            .map_err(ConnectionError::ConnectError)?;
-
-        let stream_dup = stream.try_clone().map_err(ConnectionError::CloneError)?;
-
-        let send: SendSocket;
-        let recv: RecvSocket;
-        unsafe {
-            send = UnixSeqpacket::from_raw_fd(stream.into_raw_fd())
-                .unwrap()
-                .into();
-            recv = UnixSeqpacket::from_raw_fd(stream_dup.into_raw_fd())
-                .unwrap()
-                .into();
-        }
+        let (send, recv) = Self::create_socket()?;
 
         let (request_sender, mut request_receiver) = mpsc::unbounded_channel::<RequestMessage>();
 
@@ -122,6 +103,41 @@ impl Connection {
                 ConnectionEvent::TerminationSignalReceived(SignalKind::interrupt())
             },
         }
+    }
+
+    fn create_socket() -> Result<(SendSocket, RecvSocket), ConnectionError> {
+        let socket = {
+            if let Ok(socket) = env::var("WAYLAND_SOCKET") {
+                unsafe { OwnedFd::from_raw_fd(socket.parse().unwrap()) }
+            } else {
+                let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".into());
+                let mut wayland_display = PathBuf::from(wayland_display);
+                if !wayland_display.is_absolute() {
+                    let xdg_runtime_dir = env::var("XDG_RUNTIME_DIR")
+                        .map_err(|_| ConnectionError::NoXdgRuntimeDir)?;
+                    let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
+                    wayland_display = xdg_runtime_dir.join(wayland_display);
+                }
+                unsafe {
+                    OwnedFd::from_raw_fd(
+                        UnixStream::connect(wayland_display).unwrap().into_raw_fd(),
+                    )
+                }
+            }
+        };
+        let socket_dup = socket.try_clone().unwrap();
+        let (send, recv): (SendSocket, RecvSocket) = unsafe {
+            (
+                UnixSeqpacket::from_raw_fd(socket.into_raw_fd())
+                    .unwrap()
+                    .into(),
+                UnixSeqpacket::from_raw_fd(socket_dup.into_raw_fd())
+                    .unwrap()
+                    .into(),
+            )
+        };
+
+        Ok((send, recv))
     }
 }
 

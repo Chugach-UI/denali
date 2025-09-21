@@ -76,7 +76,7 @@ impl DisplayConnection {
 
     pub async fn next_event(&mut self) -> Result<Event, DisplayConnectionError> {
         match self.connection.wait_next_event().await {
-           ConnectionEvent::WaylandMessage(head) => {
+            ConnectionEvent::WaylandMessage(head) => {
                 let head = head.unwrap();
                 let size = head.size as usize - 8;
                 let mut buf = vec![0u8; size];
@@ -98,9 +98,9 @@ impl DisplayConnection {
                 }
                 Err(DisplayConnectionError::WorkerTerminated)
             }
-            ConnectionEvent::TerminationSignalReceived(
-                signal_kind,
-            ) => Err(DisplayConnectionError::SignalReceived(signal_kind)),
+            ConnectionEvent::TerminationSignalReceived(signal_kind) => {
+                Err(DisplayConnectionError::SignalReceived(signal_kind))
+            }
         }
     }
 
