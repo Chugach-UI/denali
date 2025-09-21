@@ -10,7 +10,6 @@ use std::{
     path::PathBuf,
 };
 
-use log::error;
 use thiserror::Error;
 use tokio::{
     signal::unix::{Signal, SignalKind, signal},
@@ -120,12 +119,14 @@ impl Connection {
                 }
                 unsafe {
                     OwnedFd::from_raw_fd(
-                        UnixStream::connect(wayland_display).unwrap().into_raw_fd(),
+                        UnixStream::connect(wayland_display)
+                            .map_err(ConnectionError::ConnectError)?
+                            .into_raw_fd(),
                     )
                 }
             }
         };
-        let socket_dup = socket.try_clone().unwrap();
+        let socket_dup = socket.try_clone().map_err(ConnectionError::CloneError)?;
         let (send, recv): (SendSocket, RecvSocket) = unsafe {
             (
                 UnixSeqpacket::from_raw_fd(socket.into_raw_fd())
@@ -219,10 +220,6 @@ pub enum SendSocketError {
 pub struct RecvSocket(UnixSeqpacket);
 
 impl RecvSocket {
-    pub async fn recv(&self, buf: &mut [u8]) {
-        self.0.recv(buf).await.unwrap();
-    }
-
     pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
         let mut buf = [0u8; 8];
         self.0
