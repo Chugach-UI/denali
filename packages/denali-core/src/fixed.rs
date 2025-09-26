@@ -1,5 +1,4 @@
 //! 32 bit fixed point number with 8 bits of fractional precision.
-
 #![allow(clippy::cast_precision_loss)]
 
 /// A fixed point integer with 8 bits of fractional precision.
@@ -173,7 +172,7 @@ impl Fixed {
 
 #[cfg(test)]
 mod tests {
-    use crate::wire::fixed::Fixed;
+    use crate::fixed::Fixed;
 
     #[test]
     fn ints() {

@@ -16,13 +16,13 @@ use quote::quote;
 use walkdir::WalkDir;
 
 #[proc_macro]
-pub fn wayland_protocols(input: TokenStream) -> TokenStream {
+pub fn generate_client_protocols(input: TokenStream) -> TokenStream {
     let expr = syn::parse_macro_input!(input as syn::LitStr);
 
     match gen_protocols_inner(&expr) {
         Ok(stream) => stream,
         Err(err) => quote! {
-            compile_error!("Failed to generate Wayland protocol: {err}", err = #err);
+            compile_error!("Failed to generate client-side protocol code: {err}", err = #err);
         }
         .into(),
     }

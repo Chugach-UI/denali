@@ -143,7 +143,7 @@ pub fn expand_argument_type(
 }
 
 pub fn is_size_known_at_compile_time(args: &[&Arg]) -> bool {
-    args.iter().any(|arg| {
+    !args.iter().any(|arg| {
         arg.type_ == "string"
             || arg.type_ == "array"
             || (arg.type_ == "new_id" && arg.interface.is_none())

@@ -26,7 +26,7 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 
 use thiserror::Error;
 
-use crate::wire::serde::ObjectId;
+use crate::wire::ObjectId;
 
 const CLIENT_MIN_ID: u32 = 0x0000_0001;
 const CLIENT_MAX_ID: u32 = 0xfeff_ffff;

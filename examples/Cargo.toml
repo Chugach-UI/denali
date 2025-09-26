@@ -5,20 +5,8 @@ edition = "2021"
 publish = false
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
-denali-macro = { workspace = true }
-denali-core = { workspace = true }
 denali-client = { workspace = true }
-frunk = { workspace = true }
 
 [[example]]
 name = "simple"
 path = "simple.rs"
-
-[[example]]
-name = "wayland_book"
-path = "wayland_book.rs"
-
-[[example]]
-name = "bluh"
-path = "bluh.rs"
