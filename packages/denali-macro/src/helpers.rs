@@ -4,20 +4,23 @@ use convert_case::{Boundary, Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::protocol_parser::{Arg, Description};
+use crate::protocol_parser::{Arg, ArgType, Description};
 
-pub fn arg_type_to_rust_type(type_: &str, lifetime: Option<&str>) -> TokenStream {
+pub fn arg_type_to_rust_type(type_: &ArgType, lifetime: Option<&str>) -> TokenStream {
     let lifetime = lifetime
         .map(|l| syn::Lifetime::new(l, Span::call_site()))
         .into_iter();
     match type_ {
-        "uint" | "object" | "new_id" => quote! { u32 },
-        "int" => quote! { i32 },
-        "fixed" => quote! { denali_core::wire::fixed::Fixed },
-        "string" => quote! { denali_core::wire::serde::String #(<#lifetime>)* },
-        "array" => quote! { denali_core::wire::serde::Array #(<#lifetime>)* },
-        "fd" => quote! { () },
-        _ => panic!("Unknown type: {type_}"),
+        ArgType::Uint
+        | ArgType::Enum { .. }
+        | ArgType::ObjectId { .. }
+        | ArgType::NewId { .. }
+        | ArgType::GenericNewId => quote! { u32 },
+        ArgType::Int => quote! { i32 },
+        ArgType::Fixed => quote! { denali_core::wire::fixed::Fixed },
+        ArgType::String => quote! { denali_core::wire::serde::String #(<#lifetime>)* },
+        ArgType::Array => quote! { denali_core::wire::serde::Array #(<#lifetime>)* },
+        ArgType::Fd => quote! { () },
     }
 }
 
@@ -32,14 +35,13 @@ pub fn build_documentation(
         .or_else(|| {
             summary.map(|summary| Description {
                 summary: summary.clone(),
-                content: None,
+                content: "".to_string(),
             })
         })
         .unwrap_or_default();
     let summary = description.summary.trim();
     let content = description
         .content
-        .unwrap_or_default()
         .lines()
         .map(|line| line.trim().to_string())
         .collect::<Vec<_>>()
@@ -96,7 +98,8 @@ pub fn expand_argument_type(
 ) -> TokenStream {
     match arg {
         Arg {
-            enum_: Some(enum_), ..
+            arg_type: ArgType::Enum { enum_name: enum_ },
+            ..
         } => {
             let enum_parts = enum_.split('.').collect::<Vec<_>>();
             let path = if enum_parts.len() == 1 {
@@ -120,13 +123,15 @@ pub fn expand_argument_type(
             quote! {#path}
         }
         Arg {
-            type_,
-            interface: Some(_),
+            arg_type: ArgType::NewId { .. },
             ..
-        } if type_ == "new_id" => quote! {
+        } => quote! {
             denali_core::wire::serde::NewId
         },
-        Arg { type_, .. } if type_ == "new_id" => {
+        Arg {
+            arg_type: ArgType::GenericNewId,
+            ..
+        } => {
             let lifetime = match lifetime {
                 Some(l) => {
                     let lifetime = syn::Lifetime::new(l, Span::call_site());
@@ -138,14 +143,14 @@ pub fn expand_argument_type(
                 denali_core::wire::serde::DynamicallyTypedNewId #lifetime
             }
         }
-        arg => arg_type_to_rust_type(&arg.type_, lifetime),
+        arg => arg_type_to_rust_type(&arg.arg_type, lifetime),
     }
 }
 
 pub fn is_size_known_at_compile_time(args: &[&Arg]) -> bool {
     args.iter().any(|arg| {
-        arg.type_ == "string"
-            || arg.type_ == "array"
-            || (arg.type_ == "new_id" && arg.interface.is_none())
+        arg.arg_type == ArgType::String
+            || arg.arg_type == ArgType::Array
+            || (arg.arg_type == ArgType::GenericNewId)
     })
 }

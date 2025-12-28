@@ -31,28 +31,13 @@ pub struct Interface {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Element {
-    Request(Request),
-    Event(Event),
+    Request(Message),
+    Event(Message),
     Enum(Enum),
 }
 
 #[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-pub struct Request {
-    #[serde(rename = "@name")]
-    pub name: String,
-    #[serde(rename = "@type")]
-    pub type_: Option<String>,
-    #[serde(rename = "@since")]
-    pub since: Option<String>,
-    #[serde(rename = "@deprecated-since")]
-    pub deprecated_since: Option<String>,
-    pub description: Option<Description>,
-    #[serde(default, rename = "arg")]
-    pub args: Vec<Arg>,
-}
-
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
-pub struct Event {
+pub struct Message {
     #[serde(rename = "@name")]
     pub name: String,
     #[serde(rename = "@type")]

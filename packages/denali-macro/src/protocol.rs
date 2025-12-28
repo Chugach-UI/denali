@@ -14,7 +14,7 @@ pub fn build_protocol(
 ) -> TokenStream {
     let mod_name = build_ident(&protocol.name, Case::Snake);
 
-    let desc = build_documentation(protocol.description.as_ref(), None, None, None);
+    let desc = build_documentation(Some(&protocol.description), None, None, None);
 
     let interfaces = protocol
         .interfaces

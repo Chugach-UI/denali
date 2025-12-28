@@ -2,26 +2,18 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::{build_ident, helpers::build_documentation, protocol_parser::Enum};
+use crate::{
+    build_ident,
+    helpers::build_documentation,
+    protocol_parser::{Enum, EnumInnerType},
+};
 
 #[allow(clippy::too_many_lines)]
 pub fn build_enum(enum_: &Enum) -> TokenStream {
-    #[derive(PartialEq, Eq)]
-    enum EnumInnerType {
-        U32,
-        I32,
-    }
-
-    let bitfield = enum_.bitfield.unwrap_or(false);
     let name = format_ident!("{}", enum_.name.to_case(Case::Pascal));
-    let description =
-        build_documentation(enum_.description.as_ref(), None, enum_.since.as_ref(), None);
+    let description = build_documentation(None, None, None, None);
 
-    let inner_type = if bitfield {
-        EnumInnerType::U32
-    } else {
-        EnumInnerType::I32
-    };
+    let inner_type = enum_.inner_type();
 
     // TODO: HANDLE THE TYPE CORRECTLY
     let type_stream = if inner_type == EnumInnerType::U32 {
@@ -31,10 +23,10 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
     };
 
     let variant_names = enum_
-        .entries
+        .variants
         .iter()
         .map(|entry| {
-            let proper_case = if bitfield {
+            let proper_case = if enum_.bitfield {
                 Case::UpperSnake
             } else {
                 Case::Pascal
@@ -44,22 +36,16 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         })
         .collect::<Vec<_>>();
     let variant_values = enum_
-        .entries
+        .variants
         .iter()
         .map(|entry| {
-            let value = if entry.value.contains("0x") {
-                u32::from_str_radix(entry.value.trim_start_matches("0x"), 16).unwrap()
-            } else {
-                entry.value.parse().unwrap_or_else(|_| {
-                    panic!(
-                        "Failed to parse value '{}' for enum entry '{}'",
-                        entry.value, entry.name
-                    )
-                })
-            };
+            let value = entry.value;
 
             match inner_type {
-                EnumInnerType::U32 => quote! { #value },
+                EnumInnerType::U32 => {
+                    let value = value as u32;
+                    quote! { #value }
+                }
                 EnumInnerType::I32 => {
                     let value = value as i32;
                     quote! { #value }
@@ -69,18 +55,14 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         .collect::<Vec<_>>();
 
     let variants = enum_
-        .entries
+        .variants
         .iter()
         .zip(variant_names.iter().zip(variant_values.iter()))
         .map(|(entry, (name, value))| {
-            let desc = build_documentation(
-                entry.description.as_ref(),
-                entry.summary.as_ref(),
-                entry.since.as_ref(),
-                entry.deprecated_since.as_ref(),
-            );
+            let desc =
+                build_documentation(Some(&entry.description), Some(&entry.summary), None, None);
 
-            if bitfield {
+            if enum_.bitfield {
                 quote! {
                     #desc
                     const #name = #value;
@@ -93,7 +75,7 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
             }
         });
 
-    if bitfield {
+    if enum_.bitfield {
         quote! {
             denali_core::__bitflags::bitflags! {
                 #description

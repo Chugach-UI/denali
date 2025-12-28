@@ -10,94 +10,37 @@ use crate::{
         arg_type_to_rust_type, build_documentation, expand_argument_type,
         is_size_known_at_compile_time,
     },
-    protocol_parser::{Arg, Description, Event, Interface, Request},
+    protocol_parser::{Arg, ArgType, Description, Interface, Message},
 };
 
-pub fn build_event(
-    event: &Event,
-    interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
-) -> TokenStream {
-    let message = Message::Event(event);
-    build_message(&message, interface, interface_map)
-}
-pub fn build_request(
-    request: &Request,
-    interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
-) -> TokenStream {
-    let message = Message::Request(request);
-    build_message(&message, interface, interface_map)
-}
-
-enum Message<'a> {
-    Event(&'a Event),
-    Request(&'a Request),
-}
-impl Message<'_> {
-    fn name(&self) -> &str {
-        match self {
-            Message::Event(event) => &event.name,
-            Message::Request(request) => &request.name,
-        }
-    }
-
-    const fn description(&self) -> Option<&Description> {
-        match self {
-            Message::Event(event) => event.description.as_ref(),
-            Message::Request(request) => request.description.as_ref(),
-        }
-    }
-
-    const fn since(&self) -> Option<&String> {
-        match self {
-            Message::Event(event) => event.since.as_ref(),
-            Message::Request(request) => request.since.as_ref(),
-        }
-    }
-
-    const fn deprecated_since(&self) -> Option<&String> {
-        match self {
-            Message::Event(event) => event.deprecated_since.as_ref(),
-            Message::Request(request) => request.deprecated_since.as_ref(),
-        }
-    }
-
-    fn args(&self) -> &[Arg] {
-        match self {
-            Message::Event(event) => &event.args,
-            Message::Request(request) => &request.args,
-        }
-    }
-
-    const fn is_request(&self) -> bool {
-        matches!(self, Message::Request(_))
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageType {
+    Request,
+    Event,
 }
 
 #[allow(clippy::too_many_lines)]
 fn build_message(
-    message: &Message<'_>,
+    message: &Message,
+    message_type: MessageType,
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
-    let suffix = if message.is_request() {
-        "Request"
-    } else {
-        "Event"
-    };
+    let is_request = message_type == MessageType::Request;
+
+    let suffix = if is_request { "Request" } else { "Event" };
 
     let mut opcode: u16 = 0;
     for elem in &interface.elements {
         match elem {
-            crate::protocol_parser::Element::Request(req) if message.is_request() => {
-                if req.name == message.name() {
+            crate::protocol_parser::InterfaceElement::Request(req) if is_request => {
+                if req.name == message.name {
                     break;
                 }
                 opcode += 1;
             }
-            crate::protocol_parser::Element::Event(evt) if !message.is_request() => {
-                if evt.name == message.name() {
+            crate::protocol_parser::InterfaceElement::Event(evt) if !is_request => {
+                if evt.name == message.name {
                     break;
                 }
                 opcode += 1;
@@ -107,27 +50,27 @@ fn build_message(
     }
     let opcode = quote! { pub const OPCODE: u16 = #opcode; };
 
-    let name = format_ident!("{}{suffix}", message.name().to_case(Case::Pascal));
+    let name = format_ident!("{}{suffix}", message.name.to_case(Case::Pascal));
     let docs = build_documentation(
-        message.description(),
+        Some(&message.description),
         None,
-        message.since(),
-        message.deprecated_since(),
+        None,
+        message.deprecated_since.as_ref(),
     );
 
     let arg_names = message
-        .args()
+        .args
         .iter()
         .map(|arg| build_ident(&arg.name, Case::Snake))
         .collect::<Vec<_>>();
 
     let struct_members = message
-        .args()
+        .args
         .iter()
         .map(|arg| {
             let arg_name = build_ident(&arg.name, Case::Snake);
             let arg_docs =
-                build_documentation(arg.description.as_ref(), arg.summary.as_ref(), None, None);
+                build_documentation(Some(&arg.description), Some(&arg.summary), None, None);
             let arg_type = expand_argument_type(arg, interface_map, Some("'a"));
             quote! {
                 #arg_docs
@@ -137,21 +80,21 @@ fn build_message(
         .collect::<Vec<_>>();
 
     let lifetime = message
-        .args()
+        .args
         .iter()
         .find(|arg| {
-            arg.type_ == "string"
-                || arg.type_ == "array"
-                || (arg.type_ == "new_id" && arg.interface.is_none())
+            arg.arg_type == ArgType::String
+                || arg.arg_type == ArgType::Array
+                || (arg.arg_type == ArgType::GenericNewId)
         })
         .map(|_| quote! { 'a })
         .into_iter()
         .collect::<Vec<_>>();
 
     let args_with_size = message
-        .args()
+        .args
         .iter()
-        .filter(|arg| arg.type_ != "fd")
+        .filter(|arg| arg.arg_type != ArgType::Fd)
         .collect::<Vec<_>>();
 
     let compile_time_size = if is_size_known_at_compile_time(&args_with_size) {
@@ -162,7 +105,7 @@ fn build_message(
         } else {
             let arg_types_with_size = args_with_size
                 .iter()
-                .map(|arg| arg_type_to_rust_type(&arg.type_, None))
+                .map(|arg| arg_type_to_rust_type(&arg.arg_type, None))
                 .collect::<Vec<_>>();
 
             quote! { #(#arg_types_with_size::SIZE)+* }

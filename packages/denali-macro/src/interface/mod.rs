@@ -1,4 +1,4 @@
-mod method;
+// mod method;
 
 use std::collections::BTreeMap;
 
@@ -9,19 +9,20 @@ use quote::quote;
 use crate::{
     build_ident,
     helpers::build_documentation,
-    interface::method::build_request_method,
-    protocol_parser::{Element, Event, Interface},
-    wire::{build_enum, build_event, build_request},
+    protocol_parser::{ArgType, Interface, InterfaceElement, Message},
+    wire::build_enum,
 };
 
-fn event_needs_lifetime(event: &Event) -> bool {
+fn event_needs_lifetime(event: &Message) -> bool {
     event.args.iter().any(|arg| {
-        matches!(arg.type_.as_str(), "string" | "array")
-            || (arg.type_ == "new_id" && arg.interface.is_none())
+        matches!(
+            arg.arg_type,
+            ArgType::String | ArgType::Array | ArgType::GenericNewId
+        )
     })
 }
 
-fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
+fn build_event_enum(interface: &Interface, events: &[Message]) -> TokenStream {
     let needs_lifetime = events.iter().any(event_needs_lifetime);
 
     let lifetime = if needs_lifetime {
@@ -86,7 +87,7 @@ pub fn build_interface(
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
-    let documentation = build_documentation(interface.description.as_ref(), None, None, None);
+    let documentation = build_documentation(Some(&interface.description), None, None, None);
     let interface_str = interface
         .name
         .without_boundaries(&[Boundary::LOWER_DIGIT])
@@ -94,32 +95,9 @@ pub fn build_interface(
     let name = build_ident(&interface.name, Case::Pascal);
     let version = interface.version;
 
-    // let methods = interface.elements.iter().filter_map(|element| {
-    //     if let Element::Request(request) = element {
-    //         Some(build_request_method(request, interface_map))
-    //     } else {
-    //         None
-    //     }
-    // });
-
-    // let events = interface
-    //     .elements
-    //     .iter()
-    //     .cloned()
-    //     .filter_map(|element| {
-    //         if let Element::Event(event) = element {
-    //             Some(event)
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect::<Vec<_>>();
-
-    // let event_enum = build_event_enum(interface, &events);
-
     quote! {
         #documentation
-        pub struct #name;
+        pub struct #name(());
 
         impl denali_core::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
@@ -137,16 +115,18 @@ pub fn build_interface_module(
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
     let interface_name = build_ident(&interface.name, Case::Snake);
-    let interface_desc = build_documentation(interface.description.as_ref(), None, None, None);
+    let interface_desc = build_documentation(Some(&interface.description), None, None, None);
     let interface_version = interface.version;
 
-    // let events = interface.elements.iter().map(|element| match element {
-    //     Element::Event(event) => Some(build_event(event, interface, interface_map)),
-    //     Element::Request(request) => Some(build_request(request, interface, interface_map)),
-    //     Element::Enum(enum_) => Some(build_enum(enum_)),
-    // });
-    //
     let type_name = build_ident(&interface.name, Case::Pascal);
+
+    let enums = interface.elements.iter().filter_map(|element| {
+        if let InterfaceElement::Enum(enum_) = element {
+            Some(build_enum(enum_))
+        } else {
+            None
+        }
+    });
 
     let interface = build_interface(interface, interface_map);
 
@@ -182,7 +162,7 @@ pub fn build_interface_module(
                 }
             }
 
-            // #(#events)*
+            #(#enums)*
         }
     }
 }
