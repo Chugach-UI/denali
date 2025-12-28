@@ -2,12 +2,19 @@
 
 #![cfg_attr(test, feature(test))]
 
+pub mod connection;
 pub mod handler;
-pub mod id_manager;
+pub mod id;
+pub mod message;
 pub mod wire;
+
+mod sealed {
+    pub trait Sealed {}
+}
+
 //TODO: Rename and refactor for use in client and server!!!
-pub mod proxy;
-pub mod store;
+// pub mod proxy;
+// pub mod store;
 
 // Re-export bitflags for use by denali-macro
 // This avoids users of denali-macro from needing to depend on bitflags directly,
@@ -15,19 +22,17 @@ pub mod store;
 #[doc(hidden)]
 pub use bitflags as __bitflags;
 
-//TODO: Support client and server
-/// A Wayland object.
-pub trait Object: From<proxy::Proxy> + Into<proxy::Proxy> {
-    /// Get the unique ID of this object.
-    fn id(&self) -> u32;
-    /// Send a request over the wire associated with this object.
-    fn send_request(&self, request: proxy::RequestMessage);
-}
+use crate::message::{Event, IncomingMessage, Request};
 
 /// A Wayland interface.
-pub trait Interface: Object {
+pub trait Interface {
     /// The name of this interface.
     const INTERFACE: &'static str;
     /// The maximum supported version of this interface.
     const MAX_VERSION: u32;
+
+    /// The event type for this interface.
+    type Event: IncomingMessage<Event, Interface = Self>;
+    /// The request type for this interface.
+    type Request: IncomingMessage<Request, Interface = Self>;
 }

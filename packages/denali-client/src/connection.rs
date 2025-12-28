@@ -1,6 +1,7 @@
 //! A module for establishing and managing a connection to a Wayland server.
 
 use std::{
+    collections::HashMap,
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
     os::{
@@ -10,102 +11,37 @@ use std::{
     path::PathBuf,
 };
 
+use denali_protocol::wayland::wl_display::WlDisplay;
 use thiserror::Error;
 use tokio::{
     signal::unix::{Signal, SignalKind, signal},
     sync::mpsc::{self, UnboundedSender},
 };
-use tokio_seqpacket::{
-    UnixSeqpacket,
-    ancillary::{AddControlMessageError, AncillaryMessageWriter, OwnedAncillaryMessage},
+use tokio_seqpacket::{UnixSeqpacket, ancillary::OwnedAncillaryMessage};
+
+use denali_core::{
+    connection::ConnectionType,
+    handler::Handler,
+    id::{DynamicObjectId, ObjectId},
+    wire::serde::{Decode, MessageHeader, RawObjectId, SerdeError},
 };
-use tracing::error;
 
-use denali_core::proxy::RequestMessage;
-use denali_core::wire::serde::{Decode, MessageHeader, SerdeError};
+/// A basic, single threaded, implementation of a client connection to a Wayland server.
+pub struct Connection<'a> {
+    socket: UnixSeqpacket,
+    encoding_buf: Vec<u8>,
 
-/// A connection to a Wayland server.
-pub struct Connection {
-    recv: RecvSocket,
-    request_sender: mpsc::UnboundedSender<RequestMessage>,
-    worker_handle: tokio::task::JoinHandle<Result<(), SendSocketError>>,
-    sighup: Signal,
-    sigterm: Signal,
-    sigint: Signal,
+    handlers: HashMap<RawObjectId, Box<dyn Handler + 'a>>,
 }
 
-impl Connection {
+impl Connection<'_> {
     /// Creates a new Connection to a Wayland server.
     ///
     /// # Errors
     ///
     /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
-    pub fn new() -> Result<Self, ConnectionError> {
-        let (send, recv) = Self::create_socket()?;
-
-        let (request_sender, mut request_receiver) = mpsc::unbounded_channel::<RequestMessage>();
-
-        let worker_handle = tokio::task::spawn(async move {
-            while let Some(msg) = request_receiver.recv().await {
-                send.send_with_ancillary(msg.buffer.as_slice(), msg.fds.as_slice())
-                    .await?;
-            }
-            Ok(())
-        });
-
-        let sighup = signal(SignalKind::hangup()).unwrap();
-        let sigterm = signal(SignalKind::terminate()).unwrap();
-        let sigint = signal(SignalKind::interrupt()).unwrap();
-
-        Ok(Self {
-            recv,
-            request_sender,
-            worker_handle,
-            sighup,
-            sigterm,
-            sigint,
-        })
-    }
-
-    /// Returns a sender that can be used to send requests to the Wayland server.
-    #[must_use]
-    pub fn request_sender(&self) -> UnboundedSender<RequestMessage> {
-        self.request_sender.clone()
-    }
-
-    /// Returns a reference to the receiver socket.
-    #[must_use]
-    pub const fn receiver(&self) -> &RecvSocket {
-        &self.recv
-    }
-
-    /// Waits for the next async event to occur, which can either be a wayland packet, a worker thread failure, or a unix signal
-    pub async fn wait_next_event(&mut self) -> ConnectionEvent {
-        tokio::select! {
-            head = self.recv.recv_header() => {
-                ConnectionEvent::WaylandMessage(head)
-            },
-            Ok(res) = &mut self.worker_handle => {
-                error!("Worker task terminated.");
-                ConnectionEvent::WorkerTerminated(res)
-            },
-            _ = self.sighup.recv() => {
-                error!("Received SIGHUP");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::hangup())
-            },
-            _ = self.sigterm.recv() => {
-                error!("Received SIGTERM");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::terminate())
-            },
-            _ = self.sigint.recv() => {
-                error!("Received SIGINT");
-                ConnectionEvent::TerminationSignalReceived(SignalKind::interrupt())
-            },
-        }
-    }
-
-    fn create_socket() -> Result<(SendSocket, RecvSocket), ConnectionError> {
-        let socket = {
+    pub fn new() -> Result<(Self, ObjectId<WlDisplay>), ConnectionError> {
+        let socket_fd = {
             if let Ok(socket) = env::var("WAYLAND_SOCKET") {
                 unsafe { OwnedFd::from_raw_fd(socket.parse().unwrap()) }
             } else {
@@ -126,107 +62,28 @@ impl Connection {
                 }
             }
         };
-        let socket_dup = socket.try_clone().map_err(ConnectionError::CloneError)?;
-        let (send, recv): (SendSocket, RecvSocket) = unsafe {
-            (
-                UnixSeqpacket::from_raw_fd(socket.into_raw_fd())
-                    .unwrap()
-                    .into(),
-                UnixSeqpacket::from_raw_fd(socket_dup.into_raw_fd())
-                    .unwrap()
-                    .into(),
-            )
-        };
 
-        Ok((send, recv))
+        let socket = UnixSeqpacket::try_from(socket_fd).map_err(ConnectionError::ConnectError)?;
+
+        let display_id = unsafe { ObjectId::new(DynamicObjectId::new(1)) };
+
+        Ok((
+            Self {
+                socket,
+                encoding_buf: Vec::new(),
+                handlers: HashMap::new(),
+            },
+            display_id,
+        ))
     }
-}
 
-pub enum ConnectionEvent {
-    WaylandMessage(Result<MessageHeader, RecvSocketError>),
-    WorkerTerminated(Result<(), SendSocketError>),
-    TerminationSignalReceived(SignalKind),
-}
-
-/// Errors that can occur when establishing a connection to a Wayland server.
-#[derive(Debug, Error)]
-pub enum ConnectionError {
-    /// The `XDG_RUNTIME_DIR` environment variable is not set.
-    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
-    NoXdgRuntimeDir,
-    /// Could not connect to the Wayland display.
-    #[error("Could not connect to wayland display.")]
-    ConnectError(std::io::Error),
-    /// Could not clone the underlying Unix stream.
-    #[error("Could not clone the stream.")]
-    CloneError(std::io::Error),
-}
-
-pub struct SendSocket(UnixSeqpacket);
-
-impl SendSocket {
-    /// Sends data along with file descriptors to the Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if sending the message fails.
-    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
-    pub async fn send_with_ancillary(
-        &self,
-        buf: &[u8],
-        fds: &[RawFd],
-    ) -> Result<(), SendSocketError> {
-        let buffer = IoSlice::new(buf);
-        let mut ancillary_buffer = [0; 128];
-        let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
-        let fds = fds
-            .iter()
-            .map(|fd| unsafe { BorrowedFd::borrow_raw(*fd) })
-            .collect::<Vec<_>>();
-
-        ancillary
-            .add_fds(&fds)
-            .map_err(SendSocketError::AddFdsFailed)?;
-
-        while let Err(err) = self
-            .0
-            .send_vectored_with_ancillary(&[buffer], &mut ancillary)
+    async fn recv_header(&mut self) -> Result<MessageHeader, ConnectionError> {
+        let mut header = [0; 8];
+        self.socket
+            .recv(&mut header)
             .await
-        {
-            match err.kind() {
-                ErrorKind::Interrupted => {}
-                _ => return Err(SendSocketError::IoError(err)),
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl From<UnixSeqpacket> for SendSocket {
-    fn from(value: UnixSeqpacket) -> Self {
-        Self(value)
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum SendSocketError {
-    #[error("Failed to add fds to ancillary buffer")]
-    AddFdsFailed(#[from] AddControlMessageError),
-    #[error("IO operation failed.")]
-    IoError(#[from] std::io::Error),
-}
-
-pub struct RecvSocket(UnixSeqpacket);
-
-impl RecvSocket {
-    pub async fn recv_header(&self) -> Result<MessageHeader, RecvSocketError> {
-        let mut buf = [0u8; 8];
-        self.0
-            .recv(&mut buf)
-            .await
-            .map_err(RecvSocketError::IoError)?;
-        MessageHeader::decode(&buf).map_err(RecvSocketError::DecodeHeaderError)
+            .map_err(ConnectionError::RecvError)?;
+        MessageHeader::decode(&header).map_err(ConnectionError::SerdeError)
     }
 
     /// Receives data along with file descriptors from the Wayland server.
@@ -235,7 +92,7 @@ impl RecvSocket {
     ///
     /// This function will return an error if receiving the message fails.
     /// See [UnixSeqpacket::recv_vectored_with_ancillary] for more details.
-    pub async fn recv_with_ancillary(
+    async fn recv_with_ancillary(
         &self,
         buf: &mut [u8],
         fds: &mut [OwnedFd],
@@ -243,7 +100,7 @@ impl RecvSocket {
         let buffer = IoSliceMut::new(buf);
         let mut ancillary_buffer = [0; 128];
         let (bytes_read, ancillary_reader) = self
-            .0
+            .socket
             .recv_vectored_with_ancillary(&mut [buffer], &mut ancillary_buffer[..])
             .await
             .unwrap();
@@ -258,18 +115,91 @@ impl RecvSocket {
 
         Ok(bytes_read)
     }
-}
 
-impl From<UnixSeqpacket> for RecvSocket {
-    fn from(value: UnixSeqpacket) -> Self {
-        Self(value)
+    /// Waits for the next wayland packet
+    async fn next_packet(&mut self) -> Result<WaylandPacket, ConnectionError> {
+        let head = self.recv_header().await?;
+
+        let size = head.size as usize - 8;
+        let mut buf = vec![0u8; size];
+
+        self.recv_with_ancillary(&mut buf, &mut []).await.unwrap();
+
+        Ok(WaylandPacket {
+            header: head,
+            body: buf,
+        })
     }
 }
 
+impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
+    fn connection_type(&self) -> ConnectionType {
+        ConnectionType::Client
+    }
+
+    fn add_handler<I: denali_core::Interface, H: Handler + 'a>(
+        &mut self,
+        object: &ObjectId<I>,
+        handler: H,
+    ) {
+        self.handlers.insert(object.get(), Box::new(handler));
+    }
+
+    fn send_message<
+        I: denali_core::Interface,
+        M: denali_core::message::MessageTypeMarker,
+        O: denali_core::message::OutgoingMessage<M>,
+    >(
+        &mut self,
+        object: &ObjectId<I>,
+        message: O,
+    ) -> Result<O::Response, ()> {
+        const {
+            if M::EVENT {
+                panic!(
+                    "Client sided connections cannot send events over the wire. Make sure to only send requests through this connection."
+                )
+            }
+        }
+
+        // Reserve space for the message in the encoding buffer
+        self.encoding_buf.reserve(
+            message
+                .encoded_size()
+                .saturating_sub(self.encoding_buf.capacity()),
+        );
+
+        // Encode the message
+        message.encode(&mut self.encoding_buf).map_err(|_| ())?;
+
+        todo!()
+    }
+}
+
+pub struct WaylandPacket {
+    pub header: MessageHeader,
+    pub body: Vec<u8>,
+}
+
+/// Errors that can occur when establishing a connection to a Wayland server.
 #[derive(Debug, Error)]
-pub enum RecvSocketError {
-    #[error("Failed to decode header buffer.")]
-    DecodeHeaderError(#[from] SerdeError),
-    #[error("IO operation failed.")]
-    IoError(#[from] std::io::Error),
+pub enum ConnectionError {
+    /// The `XDG_RUNTIME_DIR` environment variable is not set.
+    #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
+    NoXdgRuntimeDir,
+    /// Could not connect to the Wayland display.
+    #[error("Could not connect to wayland display.")]
+    ConnectError(std::io::Error),
+    /// Could not clone the underlying Unix stream.
+    #[error("Could not clone the stream.")]
+    CloneError(std::io::Error),
+    /// Could not send the message.
+    #[error("Could not send the message.")]
+    SendError(std::io::Error),
+    /// Could not receive the message.
+    #[error("Could not receive the message.")]
+    RecvError(std::io::Error),
+    /// Error serializing or deserializing the message.
+    #[error("Error serializing or deserializing the message.")]
+    SerdeError(SerdeError),
 }

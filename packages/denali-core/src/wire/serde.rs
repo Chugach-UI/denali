@@ -200,10 +200,10 @@ impl Encode for Fixed {
 }
 
 /// A unique object ID
-pub type ObjectId = u32;
+pub type RawObjectId = u32;
 
 /// A statically typed new ID.
-pub type NewId = ObjectId;
+pub type NewId = RawObjectId;
 /// A dynamically typed new ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicallyTypedNewId<'a> {
@@ -212,11 +212,11 @@ pub struct DynamicallyTypedNewId<'a> {
     /// The version of the new object.
     pub version: u32,
     /// The ID of the new object.
-    pub id: ObjectId,
+    pub id: RawObjectId,
 }
 impl MessageSize for DynamicallyTypedNewId<'_> {
     fn size(&self) -> usize {
-        pad_to_32_bits(self.interface.size()) + u32::SIZE + ObjectId::SIZE
+        pad_to_32_bits(self.interface.size()) + u32::SIZE + RawObjectId::SIZE
     }
 }
 impl Decode for DynamicallyTypedNewId<'_> {

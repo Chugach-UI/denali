@@ -20,21 +20,140 @@
 //! assert_eq!(id1, id3); // id1 should be reused
 //! ```
 
+use std::borrow::Borrow;
+use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use thiserror::Error;
 
-use crate::wire::serde::ObjectId;
+use crate::Interface;
+use crate::wire::serde::RawObjectId;
 
-const CLIENT_MIN_ID: u32 = 0x0000_0001;
-const CLIENT_MAX_ID: u32 = 0xfeff_ffff;
+const CLIENT_MIN_ID: RawObjectId = 0x0000_0001;
+const CLIENT_MAX_ID: RawObjectId = 0xfeff_ffff;
+
+/// An owned object ID with a dynamic interface.
+///
+/// See [`ObjectId`] for an owned object ID with a compile-time-known interface.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DynamicObjectId(NonZeroU32);
+impl DynamicObjectId {
+    /// Creates a new `ObjectId` from a `RawObjectId`.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the given `id` is zero.
+    ///
+    /// # Safety
+    ///
+    /// The returned `ObjectId` must be a valid Wayland object ID for an object that exists.
+    #[must_use]
+    pub const unsafe fn new(id: RawObjectId) -> Self {
+        Self(NonZeroU32::new(id).expect("ObjectId cannot be zero"))
+    }
+
+    /// Returns the underlying `RawObjectId` value of the `ObjectId`.
+    #[must_use]
+    pub const fn get(&self) -> RawObjectId {
+        self.0.get()
+    }
+}
+impl Deref for DynamicObjectId {
+    type Target = NonZeroU32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl From<DynamicObjectId> for RawObjectId {
+    fn from(val: DynamicObjectId) -> Self {
+        val.0.get()
+    }
+}
+
+/// An owned object ID with a compile-time-known interface.
+///
+/// See [`DynamicObjectId`] for an owned object ID with a dynamic interface.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ObjectId<I: Interface> {
+    id: DynamicObjectId,
+    _interface: std::marker::PhantomData<I>,
+}
+
+impl<I: Interface> ObjectId<I> {
+    /// Creates a new `ObjectId` from a `DynamicObjectId`.
+    #[must_use]
+    pub const fn new(id: DynamicObjectId) -> Self {
+        Self {
+            id,
+            _interface: std::marker::PhantomData,
+        }
+    }
+
+    /// Returns the underlying `RawObjectId` value of the `TypedObjectId`.
+    #[must_use]
+    pub const fn get(&self) -> RawObjectId {
+        self.id.get()
+    }
+
+    /// Returns a reference to the underlying `ObjectId`.
+    #[must_use]
+    pub const fn as_object_id(&self) -> &DynamicObjectId {
+        &self.id
+    }
+
+    /// Returns the underlying `ObjectId`.
+    #[must_use]
+    pub fn into_inner(self) -> DynamicObjectId {
+        self.id
+    }
+
+    /// Returns a reference to the underlying `ObjectId`.
+    #[must_use]
+    pub const fn borrowed<'a>(&'a self) -> BorrowedObjectId<'a, I> {
+        BorrowedObjectId {
+            id: &self.id,
+            _interface: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<I: Interface> Deref for ObjectId<I> {
+    type Target = DynamicObjectId;
+
+    fn deref(&self) -> &Self::Target {
+        &self.id
+    }
+}
+impl<I: Interface> From<ObjectId<I>> for RawObjectId {
+    fn from(val: ObjectId<I>) -> Self {
+        val.get()
+    }
+}
+
+/// A borrowed reference to an `ObjectId`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BorrowedObjectId<'a, I: Interface> {
+    id: &'a DynamicObjectId,
+    _interface: std::marker::PhantomData<I>,
+}
+
+impl<'a, I: Interface> BorrowedObjectId<'a, I> {}
+impl<'a, I: Interface> Deref for BorrowedObjectId<'a, I> {
+    type Target = DynamicObjectId;
+
+    fn deref(&self) -> &Self::Target {
+        self.id
+    }
+}
 
 #[derive(Debug, Clone)]
 struct IdManagerInner {
-    next: u32,
-    free_list: BinaryHeap<Reverse<u32>>,
+    next: RawObjectId,
+    free_list: BinaryHeap<Reverse<RawObjectId>>,
 }
 
 impl IdManagerInner {
@@ -42,12 +161,12 @@ impl IdManagerInner {
     pub const fn new() -> Self {
         Self {
             next: CLIENT_MIN_ID,
-            free_list: BinaryHeap::<Reverse<u32>>::new(),
+            free_list: BinaryHeap::<Reverse<RawObjectId>>::new(),
         }
     }
 
     /// Peeks at the next available id without allocating it.
-    pub fn peek_next_id(&self) -> Result<u32, IdManagerError> {
+    pub fn peek_next_id(&self) -> Result<RawObjectId, IdManagerError> {
         if self.next > CLIENT_MAX_ID && self.free_list.is_empty() {
             return Err(IdManagerError::OutOfClientIds(self.next));
         }
@@ -68,7 +187,7 @@ impl IdManagerInner {
     /// # Errors
     ///
     /// This function will return an error if all client IDs have been exhausted.
-    pub fn alloc_id(&mut self) -> Result<u32, IdManagerError> {
+    pub fn alloc_id(&mut self) -> Result<RawObjectId, IdManagerError> {
         if self.next > CLIENT_MAX_ID && self.free_list.is_empty() {
             return Err(IdManagerError::OutOfClientIds(self.next));
         }
@@ -88,7 +207,7 @@ impl IdManagerInner {
     }
 
     /// Return a deleted ID to the pool of available IDs.
-    pub fn recycle_id(&mut self, id: u32) {
+    pub fn recycle_id(&mut self, id: RawObjectId) {
         if id == self.next - 1 {
             self.next -= 1;
 
@@ -129,7 +248,7 @@ impl IdManager {
     /// # Errors
     ///
     /// This function will return an error if all client IDs have been exhausted.
-    pub fn peek_next_id(&self) -> Result<ObjectId, IdManagerError> {
+    pub fn peek_next_id(&self) -> Result<RawObjectId, IdManagerError> {
         let inner = self.0.lock().unwrap();
         inner.peek_next_id()
     }
@@ -139,14 +258,14 @@ impl IdManager {
     /// # Errors
     ///
     /// This function will return an error if all client IDs have been exhausted.
-    pub fn alloc_id(&self) -> Result<ObjectId, IdManagerError> {
+    pub fn alloc_id(&self) -> Result<RawObjectId, IdManagerError> {
         let mut inner = self.0.lock().unwrap();
         inner.alloc_id()
     }
     /// Return a deleted ID to the pool of available IDs.
-    pub fn recycle_id(&self, id: ObjectId) {
+    pub fn recycle_id(&self, id: impl Into<RawObjectId>) {
         let mut inner = self.0.lock().unwrap();
-        inner.recycle_id(id);
+        inner.recycle_id(id.into());
     }
 }
 
@@ -157,5 +276,5 @@ pub enum IdManagerError {
     #[error(
         "All client IDs have been exhausted (ID {0} is out of the range of {CLIENT_MIN_ID} - {CLIENT_MAX_ID})"
     )]
-    OutOfClientIds(ObjectId),
+    OutOfClientIds(RawObjectId),
 }

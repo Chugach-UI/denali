@@ -4,13 +4,11 @@
 
 use std::{collections::BTreeMap, os::fd::RawFd, rc::Rc, sync::Mutex};
 
-use tokio::sync::mpsc::UnboundedSender;
-
-use crate::Object;
 use crate::{
-    id_manager::{IdManager, IdManagerError},
-    wire::serde::ObjectId,
+    id::{IdManager, IdManagerError},
+    wire::serde::RawObjectId,
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 /// An internal representation of a wayland message, containing both a buffer of data, and an ancillary buffer of fds.
 #[derive(Debug, Clone)]
@@ -22,7 +20,7 @@ pub struct RequestMessage {
 }
 
 /// A map of object IDs to their interface names.
-pub type InterfaceMap = Rc<Mutex<BTreeMap<ObjectId, String>>>;
+pub type InterfaceMap = Rc<Mutex<BTreeMap<RawObjectId, String>>>;
 
 /// Shared state for proxy objects, allowing them to share an IdManager and request sender.
 #[derive(Debug, Clone)]
@@ -91,7 +89,7 @@ impl Proxy {
     /// Create a new proxy object with the given ID.
     pub const fn with_id(
         version: u32,
-        id: ObjectId,
+        id: RawObjectId,
         shared_manager: IdManager,
         request_sender: UnboundedSender<RequestMessage>,
         interface_map: InterfaceMap,
@@ -148,14 +146,5 @@ impl Proxy {
     /// Send a request over the wire associated with this proxy.
     pub fn send_request(&self, request: RequestMessage) {
         self.request_sender.send(request).unwrap();
-    }
-}
-
-impl Object for Proxy {
-    fn id(&self) -> u32 {
-        self.id
-    }
-    fn send_request(&self, request: RequestMessage) {
-        self.send_request(request);
     }
 }

@@ -82,7 +82,6 @@ fn build_event_enum(interface: &Interface, events: &[Event]) -> TokenStream {
     }
 }
 
-//TODO: DO SERVER SIDE CODEGEN AS WELL
 pub fn build_interface(
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
@@ -95,99 +94,41 @@ pub fn build_interface(
     let name = build_ident(&interface.name, Case::Pascal);
     let version = interface.version;
 
-    let methods = interface.elements.iter().filter_map(|element| {
-        if let Element::Request(request) = element {
-            Some(build_request_method(request, interface_map))
-        } else {
-            None
-        }
-    });
+    // let methods = interface.elements.iter().filter_map(|element| {
+    //     if let Element::Request(request) = element {
+    //         Some(build_request_method(request, interface_map))
+    //     } else {
+    //         None
+    //     }
+    // });
 
-    let events = interface
-        .elements
-        .iter()
-        .cloned()
-        .filter_map(|element| {
-            if let Element::Event(event) = element {
-                Some(event)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+    // let events = interface
+    //     .elements
+    //     .iter()
+    //     .cloned()
+    //     .filter_map(|element| {
+    //         if let Element::Event(event) = element {
+    //             Some(event)
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect::<Vec<_>>();
 
-    let event_enum = build_event_enum(interface, &events);
-
-    let drop_impl = if let Some(destructor) = interface
-        .elements
-        .iter()
-        .filter_map(|elem| {
-            if let Element::Request(req) = elem {
-                Some(req)
-            } else {
-                None
-            }
-        })
-        .find(|req| req.type_.as_deref() == Some("destructor"))
-    {
-        let destructor = build_ident(&format!("{}_inner", destructor.name), Case::Snake);
-        quote! {
-            impl std::ops::Drop for #name {
-                fn drop(&mut self) {
-                    let _ = self.#destructor();
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
+    // let event_enum = build_event_enum(interface, &events);
 
     quote! {
         #documentation
-        #[repr(transparent)]
-        pub struct #name(denali_core::proxy::Proxy);
+        pub struct #name;
 
-        impl #name {
-            #(#methods)*
-        }
-
-        impl From<denali_core::proxy::Proxy> for #name {
-            fn from(proxy: denali_core::proxy::Proxy) -> Self {
-                Self(proxy)
-            }
-        }
-        impl From<#name> for denali_core::proxy::Proxy {
-            fn from(iface: #name) -> Self {
-                let manual = std::mem::ManuallyDrop::new(iface);
-                // SAFETY: We're taking ownership of the inner value and preventing
-                // the Drop impl from running by using ManuallyDrop
-                unsafe { std::ptr::read(&manual.0) }
-            }
-        }
-
-        #drop_impl
-
-        impl denali_core::Object for #name {
-            fn id(&self) -> u32 {
-                self.0.id()
-            }
-            fn send_request(&self, request: denali_core::proxy::RequestMessage) {
-                self.0.send_request(request);
-            }
-        }
         impl denali_core::Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;
-        }
-        unsafe impl denali_core::proxy::ProxyUpcast for #name {
-            fn upcast_ref(proxy: &denali_core::proxy::Proxy) -> &Self {
-                //SAFETY: Proxy and all generated interface structs are repr(transparent) wrappers over Proxy
-                unsafe { std::mem::transmute(proxy) }
-            }
-        }
 
-        #event_enum
+            type Event = Event;
+            type Request = Request;
+        }
     }
 }
 
@@ -199,11 +140,13 @@ pub fn build_interface_module(
     let interface_desc = build_documentation(interface.description.as_ref(), None, None, None);
     let interface_version = interface.version;
 
-    let events = interface.elements.iter().map(|element| match element {
-        Element::Event(event) => Some(build_event(event, interface, interface_map)),
-        Element::Request(request) => Some(build_request(request, interface, interface_map)),
-        Element::Enum(enum_) => Some(build_enum(enum_)),
-    });
+    // let events = interface.elements.iter().map(|element| match element {
+    //     Element::Event(event) => Some(build_event(event, interface, interface_map)),
+    //     Element::Request(request) => Some(build_request(request, interface, interface_map)),
+    //     Element::Enum(enum_) => Some(build_enum(enum_)),
+    // });
+    //
+    let type_name = build_ident(&interface.name, Case::Pascal);
 
     let interface = build_interface(interface, interface_map);
 
@@ -214,7 +157,32 @@ pub fn build_interface_module(
 
             #interface
 
-            #(#events)*
+            pub struct Request;
+            impl denali_core::message::IncomingMessage<denali_core::message::Request> for Request {
+                type Interface = #type_name;
+                fn try_decode(
+                    interface: &str,
+                    opcode: u16,
+                    message_type: denali_core::message::MessageType,
+                    data: &[u8],
+                ) -> Result<Self, denali_core::message::DecodeMessageError> {
+                    todo!()
+                }
+            }
+            pub struct Event;
+            impl denali_core::message::IncomingMessage<denali_core::message::Event> for Event {
+                type Interface = #type_name;
+                fn try_decode(
+                    interface: &str,
+                    opcode: u16,
+                    message_type: denali_core::message::MessageType,
+                    data: &[u8],
+                ) -> Result<Self, denali_core::message::DecodeMessageError> {
+                    todo!()
+                }
+            }
+
+            // #(#events)*
         }
     }
 }

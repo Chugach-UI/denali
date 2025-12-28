@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use crate::wire::serde::ObjectId;
+use crate::id::TypedObjectId;
+use crate::wire::serde::RawObjectId;
 
 use crate::Interface;
 use crate::proxy::{Proxy, ProxyUpcast, SharedProxyState};
@@ -11,10 +12,10 @@ pub trait Store {
     /// Insert a new object into the store.
     fn insert_proxy(&mut self, interface: String, version: u32, proxy: Proxy);
     /// Take ownership of an object by its ID, if it exists and matches the requested interface and version.
-    fn take<I: Interface>(&mut self, id: &ObjectId) -> Option<I>;
-    fn remove(&mut self, id: &ObjectId);
+    fn take<I: Interface>(&mut self, id: &RawObjectId) -> Option<I>;
+    fn remove(&mut self, id: &RawObjectId);
     /// Get a reference to an object by its ID, if it exists and matches the requested interface and version.
-    fn get<I: Interface + ProxyUpcast>(&self, id: &ObjectId) -> Option<&I>;
+    fn get<I: Interface + ProxyUpcast>(&self, id: &RawObjectId) -> Option<&I>;
     /// Get references to all objects that match the requested interface and version.
     fn get_all<I: Interface + ProxyUpcast>(&self) -> Vec<&I>;
 }
@@ -23,7 +24,6 @@ pub trait Store {
 struct Object {
     version: u32,
     interface: String,
-    proxy: Proxy,
 }
 
 /// A simple in-memory store for Wayland objects.
@@ -31,7 +31,7 @@ struct Object {
 /// Stores can be created with the DisplayConnection
 #[derive(Debug, Clone)]
 pub struct InterfaceStore {
-    objects: BTreeMap<ObjectId, Object>,
+    objects: BTreeMap<RawObjectId, Object>,
     shared_state: SharedProxyState,
 }
 impl InterfaceStore {
@@ -45,37 +45,22 @@ impl InterfaceStore {
     }
 
     /// Insert a new object into the store.
-    pub fn insert_interface<I: Interface>(&mut self, interface: I, version: u32) {
+    pub fn insert<I: Interface>(&mut self, id: TypedObjectId<I>, version: u32) {
         self.objects.insert(
-            interface.id(),
+            id.get(),
             Object {
                 version,
                 interface: I::INTERFACE.to_owned(),
-                proxy: interface.into(),
-            },
-        );
-    }
-
-    /// Insert a new object into the store.
-    pub fn insert_proxy(&mut self, interface: String, version: u32, proxy: Proxy) {
-        let mut map = self.shared_state.interface_map.lock().unwrap();
-        map.insert(proxy.id(), interface.clone());
-        self.objects.insert(
-            proxy.id(),
-            Object {
-                version,
-                interface,
-                proxy,
             },
         );
     }
 
     /// Remove an object from the store by its ID.
-    pub fn remove(&mut self, id: &ObjectId) {
+    pub fn remove(&mut self, id: &RawObjectId) {
         self.objects.remove(id);
     }
     /// Take ownership of an object by its ID, if it exists and matches the requested interface and version.
-    pub fn take<I: Interface>(&mut self, id: &ObjectId) -> Option<I> {
+    pub fn take<I: Interface>(&mut self, id: &RawObjectId) -> Option<I> {
         let obj = self.objects.remove(id)?;
 
         if obj.interface != I::INTERFACE || obj.version < I::MAX_VERSION {
@@ -95,7 +80,7 @@ impl InterfaceStore {
 
     /// Get a reference to an object by its ID, if it exists and matches the requested interface and version.
     #[must_use]
-    pub fn get<I: Interface + ProxyUpcast>(&self, id: &ObjectId) -> Option<&I> {
+    pub fn get<I: Interface + ProxyUpcast>(&self, id: &RawObjectId) -> Option<&I> {
         let obj = self.objects.get(id)?;
 
         if obj.interface != I::INTERFACE || obj.version > I::MAX_VERSION {
@@ -122,7 +107,7 @@ impl InterfaceStore {
 }
 
 impl Store for InterfaceStore {
-    fn get<I: Interface + ProxyUpcast>(&self, id: &ObjectId) -> Option<&I> {
+    fn get<I: Interface + ProxyUpcast>(&self, id: &RawObjectId) -> Option<&I> {
         self.get(id)
     }
 
@@ -138,11 +123,11 @@ impl Store for InterfaceStore {
         self.insert_proxy(interface, version, proxy);
     }
 
-    fn remove(&mut self, id: &ObjectId) {
+    fn remove(&mut self, id: &RawObjectId) {
         self.remove(id);
     }
 
-    fn take<I: Interface>(&mut self, id: &ObjectId) -> Option<I> {
+    fn take<I: Interface>(&mut self, id: &RawObjectId) -> Option<I> {
         self.take(id)
     }
 }
