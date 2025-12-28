@@ -90,7 +90,7 @@ pub struct Arg {
     #[serde(rename = "@interface")]
     pub interface: Option<String>,
     #[serde(rename = "@allow-null")]
-    pub allow_null: Option<String>,
+    pub allow_null: Option<bool>,
     #[serde(rename = "@enum")]
     pub enum_: Option<String>,
     pub description: Option<Description>,

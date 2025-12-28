@@ -70,9 +70,35 @@ fn transform_message(message: serde::Message, opcode: u32) -> Message {
 }
 
 fn transform_arg(arg: serde::Arg) -> Arg {
+    let arg_type = match arg.type_.as_str() {
+        "object" => ArgType::ObjectId {
+            nullable: arg.allow_null.unwrap_or(false),
+        },
+
+        "new_id" if arg.interface.is_none() => ArgType::GenericNewId,
+        "new_id" => ArgType::NewId {
+            interface: arg.interface.unwrap(),
+        },
+
+        "uint" if arg.enum_.is_some() => ArgType::Enum {
+            enum_name: arg.enum_.unwrap(),
+        },
+        "uint" => ArgType::Uint,
+
+        "int" => ArgType::Int,
+        "fixed" => ArgType::Fixed,
+
+        "string" => ArgType::String,
+        "array" => ArgType::Array,
+
+        "fd" => ArgType::Fd,
+
+        _ => panic!("Unknown argument type '{}'", arg.type_),
+    };
+
     Arg {
         name: arg.name,
-        arg_type: ArgType::Array,
+        arg_type,
         summary: arg.summary.unwrap_or_default(),
         description: transform_description(arg.description),
     }
