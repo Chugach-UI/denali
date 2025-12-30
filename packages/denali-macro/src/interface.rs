@@ -10,7 +10,7 @@ use crate::{
     MessageType, build_ident,
     helpers::{build_documentation, expand_argument_type, interface_path},
     protocol_parser::{ArgType, Interface, InterfaceElement, Message, MessageKind, NewIdType},
-    wire::{build_enum, build_message_encode_impl},
+    wire::{build_enum, build_message_decode_body, build_message_encode_impl},
 };
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,8 @@ fn build_message_fields(
                 };
             }
 
-            let (field_type, uses_lifetime) = expand_argument_type(arg, interface_map, Some("'a"));
+            let (field_type, uses_lifetime) =
+                expand_argument_type(arg, interface_map, Some("'a"), outgoing);
             needs_lifetime |= uses_lifetime;
 
             quote! { #field_name: #field_type }
@@ -99,20 +100,33 @@ fn build_incoming_message_enums(
     };
     let interface_name = &ctx.interface_name;
 
-    let messages = interface.elements.iter().filter_map(|elem| match elem {
-        InterfaceElement::Request(message) if message_type == MessageType::Request => Some(message),
-        InterfaceElement::Event(message) if message_type == MessageType::Event => Some(message),
-        _ => None,
-    });
+    let messages = interface
+        .elements
+        .iter()
+        .cloned()
+        .filter_map(|elem| match elem {
+            InterfaceElement::Request(message) if message_type == MessageType::Request => {
+                Some(message)
+            }
+            InterfaceElement::Event(message) if message_type == MessageType::Event => Some(message),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
 
     let message_type_marker = if message_type == MessageType::Request {
         quote! { denali_core::message::Request }
     } else {
         quote! { denali_core::message::Event }
     };
+    let message_type_enum = if message_type == MessageType::Request {
+        quote! { denali_core::message::MessageType::Request }
+    } else {
+        quote! { denali_core::message::MessageType::Event }
+    };
 
     let mut needs_lifetime = false;
     let variants = messages
+        .iter()
         .map(|msg| {
             let event_name = build_ident(&msg.name, Case::Pascal);
 
@@ -136,6 +150,17 @@ fn build_incoming_message_enums(
         quote! {}
     };
 
+    let decode_arms = messages.iter().map(|msg| {
+        let opcode = msg.opcode as u16;
+        let decode_body = build_message_decode_body(msg);
+
+        quote! {
+            #opcode => Ok({
+                #decode_body
+            })
+        }
+    });
+
     quote! {
         pub enum #incoming_enum_name #lifetime {
             #(#variants),*
@@ -149,7 +174,19 @@ fn build_incoming_message_enums(
                 message_type: denali_core::message::MessageType,
                 data: &[u8],
             ) -> Result<Self, denali_core::message::DecodeMessageError> {
-                todo!()
+                if message_type != #message_type_enum {
+                    todo!()
+                }
+                if interface != Self::Interface::INTERFACE {
+                    return Err(denali_core::message::DecodeMessageError::UnknownInterface(interface.to_string()));
+                }
+
+                let mut reader = denali_core::wire::MessageDecoder::new(data);
+
+                match opcode {
+                    #(#decode_arms,)*
+                    opcode => Err(denali_core::message::DecodeMessageError::UnknownOpcode(opcode))
+                }
             }
         }
     }

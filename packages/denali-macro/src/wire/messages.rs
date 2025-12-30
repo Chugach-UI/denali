@@ -1,10 +1,9 @@
-
 use convert_case::Case;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 use crate::{
-    build_ident,
+    MessageType, build_ident,
     protocol_parser::{Arg, ArgType, Message},
 };
 
@@ -107,144 +106,68 @@ pub fn build_message_encode_impl(
     }
 }
 
-// #[allow(clippy::too_many_lines)]
-// fn build_message(
-//     message: &Message,
-//     message_type: MessageType,
-//     interface: &Interface,
-//     interface_map: &BTreeMap<String, String>,
-// ) -> TokenStream {
-//     let is_request = message_type == MessageType::Request;
+fn read_into_arg_var(arg: &Arg) -> TokenStream {
+    let arg_name = build_ident(&arg.name, Case::Snake);
 
-//     let suffix = if is_request { "Request" } else { "Event" };
+    match &arg.arg_type {
+        ArgType::GenericNewId => quote! {
+            let raw: denali_core::wire::serde::DynamicallyTypedNewId = reader.read()?;
+            let #arg_name = denali_core::id::DynamicObjectId::new(raw.id, raw.version, raw.interface.data);
+        },
+        ArgType::ObjectId {
+            nullable,
+            interface,
+        } => {
+            let id = if interface.is_some() {
+                quote! { ObjectId::from_raw(raw) }
+            } else {
+                quote! { AnyObjectId::new(raw) }
+            };
 
-//     let mut opcode: u16 = 0;
-//     for elem in &interface.elements {
-//         match elem {
-//             crate::protocol_parser::InterfaceElement::Request(req) if is_request => {
-//                 if req.name == message.name {
-//                     break;
-//                 }
-//                 opcode += 1;
-//             }
-//             crate::protocol_parser::InterfaceElement::Event(evt) if !is_request => {
-//                 if evt.name == message.name {
-//                     break;
-//                 }
-//                 opcode += 1;
-//             }
-//             _ => {}
-//         }
-//     }
-//     let opcode = quote! { pub const OPCODE: u16 = #opcode; };
+            if *nullable {
+                quote! {
+                    let raw = reader.read()?;
+                    let #arg_name = if raw != 0 {
+                        unsafe { Some(#id) }
+                    } else {
+                        None
+                    };
+                }
+            } else {
+                quote! {
+                    let raw = reader.read()?;
+                    let #arg_name = unsafe { #id };
+                }
+            }
+        }
+        ArgType::NewId { .. } => quote! {
+            let raw = reader.read()?;
+            let #arg_name = unsafe { ObjectId::from_raw(raw) };
+        },
 
-//     let name = format_ident!("{}{suffix}", message.name.to_case(Case::Pascal));
-//     let docs = build_documentation(
-//         Some(&message.description),
-//         None,
-//         None,
-//         message.deprecated_since.as_ref(),
-//     );
+        ArgType::Enum { .. }
+        | ArgType::Uint
+        | ArgType::Int
+        | ArgType::Fixed
+        | ArgType::Array
+        | ArgType::String => quote! { let #arg_name = reader.read()?; },
+    }
+}
 
-//     let arg_names = message
-//         .args
-//         .iter()
-//         .map(|arg| build_ident(&arg.name, Case::Snake))
-//         .collect::<Vec<_>>();
+pub fn build_message_decode_body(message: &Message) -> TokenStream {
+    let definitions = message.args.iter().map(read_into_arg_var);
+    let message_ident = build_ident(&message.name, Case::Pascal);
 
-//     let mut needs_lifetime = false;
-//     let struct_members = message
-//         .args
-//         .iter()
-//         .map(|arg| {
-//             let arg_name = build_ident(&arg.name, Case::Snake);
-//             let arg_docs =
-//                 build_documentation(Some(&arg.description), Some(&arg.summary), None, None);
-//             let (arg_type, uses_lifetime) = expand_argument_type(arg, interface_map, Some("'a"));
+    let arg_names = message
+        .args
+        .iter()
+        .map(|arg| build_ident(&arg.name, Case::Snake));
 
-//             needs_lifetime |= uses_lifetime;
+    quote! {
+        #(#definitions)*
 
-//             quote! {
-//                 #arg_docs
-//                 pub #arg_name: #arg_type,
-//             }
-//         })
-//         .collect::<Vec<_>>();
-
-//     let lifetime = if needs_lifetime {
-//         quote! { <'a> }
-//     } else {
-//         quote! {}
-//     };
-
-//     let args_with_size = message
-//         .args
-//         .iter()
-//         .filter(|arg| arg.arg_type != ArgType::Fd)
-//         .collect::<Vec<_>>();
-
-//     let compile_time_size = if is_size_known_at_compile_time(&args_with_size) {
-//         quote! {}
-//     } else {
-//         let size = if args_with_size.is_empty() {
-//             quote! { 0 }
-//         } else {
-//             let arg_types_with_size = args_with_size
-//                 .iter()
-//                 .map(|arg| arg_type_to_rust_type(&arg.arg_type, None).0)
-//                 .collect::<Vec<_>>();
-
-//             quote! { #(#arg_types_with_size::SIZE)+* }
-//         };
-//         quote! {
-//            impl #lifetime denali_core::wire::serde::CompileTimeMessageSize for #name #lifetime {
-//                const SIZE: usize = #size;
-//            }
-//         }
-//     };
-
-//     quote! {
-//         #docs
-//         #[derive(Debug, Clone, PartialEq, Eq)]
-//         pub struct #name #lifetime {
-//             #(#struct_members)*
-//         }
-//         impl #lifetime #name #lifetime {
-//             #opcode
-//         }
-//         impl #lifetime denali_core::wire::serde::MessageSize for #name #lifetime {
-//             fn size(&self) -> usize {
-//                 let mut size = 0;
-//                 #(
-//                     size += self.#arg_names.size();
-//                 )*
-//                 size
-//             }
-//         }
-//         #compile_time_size
-//         impl #lifetime denali_core::wire::serde::Decode for #name #lifetime {
-//             fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
-//                 let mut traverser = denali_core::wire::MessageDecoder::new(data);
-
-//                 #(
-//                     let #arg_names = traverser.read()?;
-//                 )*
-
-//                 Ok(Self {
-//                     #(#arg_names),*
-//                 })
-//             }
-//         }
-//         impl #lifetime denali_core::wire::serde::Encode for #name #lifetime {
-//             fn encode(&self, data: &mut [u8]) -> Result<usize, denali_core::wire::serde::SerdeError> {
-//                 let mut traverser = denali_core::wire::MessageEncoder::new(data);
-
-//                 #(
-//                     traverser.write(&self.#arg_names)?;
-//                 )*
-
-//                 Ok(traverser.position() as usize)
-//             }
-//         }
-//     }
-// }
+        Self::#message_ident {
+            #(#arg_names),*
+        }
+    }
+}

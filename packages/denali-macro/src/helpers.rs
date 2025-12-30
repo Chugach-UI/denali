@@ -120,6 +120,7 @@ pub fn expand_argument_type(
     arg: &Arg,
     interface_map: &BTreeMap<String, String>,
     lifetime: Option<&str>,
+    outgoing: bool,
 ) -> (TokenStream, bool) {
     let mut lifetime_used = false;
     let lifetime = lifetime.map(|sym| syn::Lifetime::new(sym, Span::call_site()));
@@ -138,15 +139,21 @@ pub fn expand_argument_type(
             interface,
             nullable,
         } => {
-            lifetime_used = true;
-
             let lifetime = lifetime.into_iter();
+
+            let reference = if outgoing {
+                lifetime_used = true;
+                quote! { & #(#lifetime)* }
+            } else {
+                quote! {}
+            };
+
             let id_type = if let Some(interface) = interface {
                 let interface_path = interface_path(interface_map, interface);
-                quote! { & #(#lifetime)* ObjectId<#interface_path> }
+                quote! { #reference ObjectId<#interface_path> }
             } else {
                 quote! {
-                    & #(#lifetime)* AnyObjectId
+                    #reference AnyObjectId
                 }
             };
 
