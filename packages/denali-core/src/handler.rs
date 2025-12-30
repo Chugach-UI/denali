@@ -10,7 +10,6 @@ use crate::{
 pub trait Handler: crate::sealed::Sealed {
     fn handle_message(
         &mut self,
-        interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
@@ -36,14 +35,13 @@ impl<'a, I: Interface, F: FnMut(I::Event<'a>)> crate::sealed::Sealed for EventHa
 impl<'a, I: Interface, F: FnMut(I::Event<'a>)> Handler for EventHandler<'a, I, F> {
     fn handle_message(
         &mut self,
-        interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
         _id: AnyObjectId,
     ) {
         let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
-            interface,
+            I::INTERFACE,
             opcode,
             message_type,
             data,
@@ -78,14 +76,13 @@ impl<'a, I: Interface, F: FnMut(I::Request<'a>)> RequestHandler<'a, I, F> {
 impl<'a, I: Interface, F: FnMut(I::Request<'a>)> Handler for RequestHandler<'a, I, F> {
     fn handle_message(
         &mut self,
-        interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
         _id: AnyObjectId,
     ) {
         let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
-            interface,
+            I::INTERFACE,
             opcode,
             message_type,
             data,

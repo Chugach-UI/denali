@@ -3,9 +3,9 @@
 use std::{
     collections::HashMap,
     env,
-    io::IoSliceMut,
+    io::{ErrorKind, IoSlice, IoSliceMut},
     os::{
-        fd::{FromRawFd, IntoRawFd, OwnedFd},
+        fd::{BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
         unix::net::UnixStream,
     },
     path::PathBuf,
@@ -13,12 +13,15 @@ use std::{
 
 use denali_protocol::wayland::wl_display::WlDisplay;
 use thiserror::Error;
-use tokio_seqpacket::{UnixSeqpacket, ancillary::OwnedAncillaryMessage};
+use tokio_seqpacket::{
+    UnixSeqpacket,
+    ancillary::{AncillaryMessageWriter, OwnedAncillaryMessage},
+};
 
 use denali_core::{
     connection::ConnectionType,
     handler::Handler,
-    id::{IdFactory, IdManager, ObjectId},
+    id::{AnyObjectId, IdFactory, IdManager, ObjectId},
     message::{MessageResponse, encode_message},
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
 };
@@ -79,6 +82,41 @@ impl Connection<'_> {
         ))
     }
 
+    /// Sends data along with file descriptors to the Wayland server.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if sending the message fails.
+    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
+    pub async fn send_with_ancillary(
+        &self,
+        buf: &[u8],
+        fds: &[RawFd],
+    ) -> Result<(), ConnectionError> {
+        let buffer = IoSlice::new(buf);
+        let mut ancillary_buffer = [0; 128];
+        let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
+        let fds = fds
+            .iter()
+            .map(|fd| unsafe { BorrowedFd::borrow_raw(*fd) })
+            .collect::<Vec<_>>();
+
+        ancillary.add_fds(&fds).unwrap(); //TODO
+
+        while let Err(err) = self
+            .socket
+            .send_vectored_with_ancillary(&[buffer], &mut ancillary)
+            .await
+        {
+            match err.kind() {
+                ErrorKind::Interrupted => {}
+                _ => return Err(ConnectionError::SendError(err)),
+            }
+        }
+
+        Ok(())
+    }
+
     async fn recv_header(&mut self) -> Result<MessageHeader, ConnectionError> {
         let mut header = [0; 8];
         self.socket
@@ -132,6 +170,21 @@ impl Connection<'_> {
             body: buf,
         })
     }
+
+    pub async fn handle_events(&mut self) -> Result<(), ConnectionError> {
+        loop {
+            let packet = self.next_packet().await?;
+
+            if let Some(handler) = self.handlers.get_mut(&packet.header.object_id) {
+                handler.handle_message(
+                    packet.header.opcode,
+                    denali_core::message::MessageType::Event,
+                    &packet.body,
+                    unsafe { AnyObjectId::new(packet.header.object_id) },
+                );
+            }
+        }
+    }
 }
 
 impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
@@ -149,7 +202,7 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
         self.handlers.insert(object.get(), Box::new(handler));
     }
 
-    fn send_message<
+    async fn send_message<
         M: denali_core::message::MessageTypeMarker,
         O: denali_core::message::OutgoingMessage<M>,
     >(
@@ -170,7 +223,7 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
             .resize(self.encoding_buf.len() + growth, 0);
 
         // Encode the message
-        encode_message(
+        let len = encode_message(
             &message,
             message.sender().get(),
             O::OPCODE,
@@ -178,8 +231,8 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
             IdFactory::new(&mut self.id_manager),
         )?;
 
-        //TODO: Send the message over the socket
-        dbg!(&self.encoding_buf);
+        self.send_with_ancillary(&self.encoding_buf[..len], &[])
+            .await?;
 
         let response =
             <O::Response as MessageResponse>::with_id_factory(IdFactory::new(&mut self.id_manager));
