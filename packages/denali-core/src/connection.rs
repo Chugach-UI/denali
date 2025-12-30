@@ -30,6 +30,8 @@ impl ConnectionType {
 ///
 /// This trait provides methods for managing handlers, sending requests, and sending events.
 pub trait Connection<'a> {
+    type Error;
+
     /// Returns the type of the connection.
     fn connection_type(&self) -> ConnectionType;
 
@@ -51,18 +53,18 @@ pub trait Connection<'a> {
     fn send_message<M: MessageTypeMarker, O: OutgoingMessage<M>>(
         &mut self,
         message: O,
-    ) -> Result<O::Response, ()>;
+    ) -> Result<O::Response, Self::Error>;
 
     fn send_event<O: OutgoingMessage<Event>>(
         &mut self,
         message: O,
-    ) -> Result<O::Response, ()> {
+    ) -> Result<O::Response, Self::Error> {
         self.send_message(message)
     }
     fn send_request<O: OutgoingMessage<Request>>(
         &mut self,
         message: O,
-    ) -> Result<O::Response, ()> {
+    ) -> Result<O::Response, Self::Error> {
         self.send_message(message)
     }
 }

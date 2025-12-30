@@ -8,8 +8,8 @@ use quote::quote;
 
 use crate::{
     MessageType, build_ident,
-    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
-    protocol_parser::{Arg, ArgType, Interface, InterfaceElement, Message, MessageKind},
+    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type, interface_path},
+    protocol_parser::{Arg, ArgType, Interface, InterfaceElement, Message, MessageKind, NewIdType},
     wire::{build_enum, build_message_encode_impl},
 };
 
@@ -54,17 +54,24 @@ fn build_message_fields(
         .args
         .iter()
         .filter(|field| {
-            if outgoing {
+            if outgoing && matches!(message.new_id_type, NewIdType::Typed { .. }) {
                 !field.arg_type.is_new_id()
             } else {
                 true
             }
         })
         .map(|arg| {
+            let field_name = build_ident(&arg.name, Case::Snake);
+
+            if outgoing && arg.arg_type == ArgType::GenericNewId {
+                return quote! {
+                    #field_name: denali_core::message::NewIdHint<I>
+                };
+            }
+
             let (field_type, uses_lifetime) = expand_argument_type(arg, interface_map, Some("'a"));
             needs_lifetime |= uses_lifetime;
 
-            let field_name = build_ident(&arg.name, Case::Snake);
             quote! { #field_name: #field_type }
         });
 
@@ -177,25 +184,49 @@ fn build_outgoing_message_structs(
     let structs = messages.map(|msg| {
         let name = build_ident(&format!("{prefix}_{}{suffix}", msg.name), Case::Pascal);
         let opcode = msg.opcode as u16;
+
         let (fields, uses_lifetime) = build_message_fields(ctx, interface_map, msg, true);
 
         let lifetime = if uses_lifetime {
-            quote! { <'a> }
+            quote! { 'a }
         } else {
             quote! {}
         };
 
-        let encode_impl = build_message_encode_impl(msg, name.clone(), &lifetime);
+        let bound_generics = if msg.new_id_type == NewIdType::Generic {
+            quote! { <#lifetime, I: Interface>  }
+        } else {
+            quote! { <#lifetime> }
+        };
+        let generics = if msg.new_id_type == NewIdType::Generic {
+            quote! { <#lifetime, I>  }
+        } else {
+            quote! { <#lifetime> }
+        };
+
+        let response = match &msg.new_id_type {
+            NewIdType::None => quote! { () },
+            NewIdType::Generic => quote! {  ObjectId<I> },
+            NewIdType::Typed { interface } => {
+                let interface_path = interface_path(interface_map, &interface);
+
+                quote! {
+                     ObjectId<#interface_path>
+                }
+            }
+        };
+
+        let encode_impl = build_message_encode_impl(msg, name.clone(), &bound_generics, &generics);
 
         quote! {
-            pub struct #name #lifetime #fields
+            pub struct #name #bound_generics #fields
 
-            impl #lifetime OutgoingMessage<#message_type_marker> for #name #lifetime {
+            impl #bound_generics OutgoingMessage<#message_type_marker> for #name #generics {
                 type Interface = #interface_name;
                 const OPCODE: u16 = #opcode;
 
                 /// The type of response expected from this event/request.
-                type Response = ();
+                type Response = #response;
 
                 fn sender(&self) -> &ObjectId<Self::Interface> {
                     &self.sender

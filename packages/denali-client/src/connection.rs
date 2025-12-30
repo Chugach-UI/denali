@@ -22,18 +22,17 @@ use tokio_seqpacket::{UnixSeqpacket, ancillary::OwnedAncillaryMessage};
 use denali_core::{
     connection::ConnectionType,
     handler::Handler,
-    id::{AnyObjectId, ObjectId},
-    message,
-    wire::{
-        encode_message,
-        serde::{Decode, MessageHeader, RawObjectId, SerdeError},
-    },
+    id::{AnyObjectId, IdFactory, IdManager, ObjectId},
+    message::{self, MessageResponse, encode_message},
+    wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
 };
 
 /// A basic, single threaded, implementation of a client connection to a Wayland server.
 pub struct Connection<'a> {
     socket: UnixSeqpacket,
     encoding_buf: Vec<u8>,
+
+    id_manager: IdManager,
 
     handlers: HashMap<RawObjectId, Box<dyn Handler + 'a>>,
 }
@@ -45,6 +44,8 @@ impl Connection<'_> {
     ///
     /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
     pub fn new() -> Result<(Self, ObjectId<WlDisplay>), ConnectionError> {
+        let mut id_manager = IdManager::new();
+
         let socket_fd = {
             if let Ok(socket) = env::var("WAYLAND_SOCKET") {
                 unsafe { OwnedFd::from_raw_fd(socket.parse().unwrap()) }
@@ -69,13 +70,14 @@ impl Connection<'_> {
 
         let socket = UnixSeqpacket::try_from(socket_fd).map_err(ConnectionError::ConnectError)?;
 
-        let display_id = unsafe { ObjectId::new(AnyObjectId::new(1)) };
+        let display_id = unsafe { id_manager.alloc_typed_id().unwrap() };
 
         Ok((
             Self {
                 socket,
                 encoding_buf: Vec::new(),
                 handlers: HashMap::new(),
+                id_manager,
             },
             display_id,
         ))
@@ -137,6 +139,8 @@ impl Connection<'_> {
 }
 
 impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
+    type Error = ConnectionError;
+
     fn connection_type(&self) -> ConnectionType {
         ConnectionType::Client
     }
@@ -155,18 +159,19 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
     >(
         &mut self,
         message: O,
-    ) -> Result<O::Response, ()> {
+    ) -> Result<O::Response, ConnectionError> {
         const {
-            if M::EVENT {
-                panic!(
-                    "Client sided connections cannot send events over the wire. Make sure to only send requests through this connection."
-                )
-            }
+            assert!(
+                !M::EVENT,
+                "Client sided connections cannot send events over the wire. Make sure to only send requests through this connection."
+            );
         }
 
         // Reserve space for the message in the encoding buffer
+        let required_len = self.encoding_buf.len() + message.size() + MessageHeader::SIZE;
+        let growth = required_len.saturating_sub(self.encoding_buf.capacity());
         self.encoding_buf
-            .reserve(message.size().saturating_sub(self.encoding_buf.capacity()));
+            .resize(self.encoding_buf.len() + growth, 0);
 
         // Encode the message
         encode_message(
@@ -174,12 +179,16 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
             message.sender().get(),
             O::OPCODE,
             &mut self.encoding_buf,
-        )
-        .map_err(|_| ())?;
+            IdFactory::new(&mut self.id_manager),
+        )?;
 
-        // Send the message over the socket
+        //TODO: Send the message over the socket
         dbg!(&self.encoding_buf);
-        todo!()
+
+        let response =
+            <O::Response as MessageResponse>::with_id_factory(IdFactory::new(&mut self.id_manager));
+
+        Ok(response)
     }
 }
 
@@ -208,5 +217,5 @@ pub enum ConnectionError {
     RecvError(std::io::Error),
     /// Error serializing or deserializing the message.
     #[error("Error serializing or deserializing the message.")]
-    SerdeError(SerdeError),
+    SerdeError(#[from] SerdeError),
 }

@@ -100,7 +100,7 @@ pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
     syn::Ident::new(&name, Span::call_site())
 }
 
-fn interface_path(interface_map: &BTreeMap<String, String>, interface: &str) -> TokenStream {
+pub fn interface_path(interface_map: &BTreeMap<String, String>, interface: &str) -> TokenStream {
     let protocol = interface_map
         .get(interface)
         .unwrap_or_else(|| panic!("Interface '{}' not found in interface map", interface))

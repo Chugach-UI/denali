@@ -257,6 +257,14 @@ impl IdManager {
             self.free_list.push(Reverse(id));
         }
     }
+
+    pub unsafe fn alloc_any_id(&mut self) -> Result<AnyObjectId, IdManagerError> {
+        self.alloc_id().map(|id| unsafe { AnyObjectId::new(id) })
+    }
+
+    pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
+        self.alloc_id().map(|id| unsafe { ObjectId::from_raw(id) })
+    }
 }
 impl Default for IdManager {
     fn default() -> Self {
@@ -286,11 +294,11 @@ impl<'a> IdFactory<'a> {
     }
 
     pub unsafe fn alloc_any_id(&mut self) -> Result<AnyObjectId, IdManagerError> {
-        self.alloc_id().map(|id| unsafe { AnyObjectId::new(id) })
+        unsafe { self.0.alloc_any_id() }
     }
 
     pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
-        self.alloc_id().map(|id| unsafe { ObjectId::from_raw(id) })
+        unsafe { self.0.alloc_typed_id() }
     }
 }
 

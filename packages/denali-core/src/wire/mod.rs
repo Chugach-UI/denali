@@ -127,30 +127,6 @@ impl<'a> MessageEncoder<'a> {
     }
 }
 
-/// Encodes a message with the given object ID and opcode into the provided byte buffer.
-///
-/// # Errors
-///
-/// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
-pub fn encode_message<T: serde::Encode>(
-    message: &T,
-    object_id: u32,
-    opcode: u16,
-    data: &mut [u8],
-) -> Result<usize, serde::SerdeError> {
-    let mut traverser = MessageEncoder::new(data);
-    let header = serde::MessageHeader {
-        object_id,
-        size: (serde::MessageHeader::SIZE + message.size()) as u16,
-        opcode,
-    };
-
-    traverser.write(&header)?;
-    traverser.write(message)?;
-
-    Ok(traverser.position() as usize)
-}
-
 #[cfg(test)]
 mod tests {
     extern crate test;

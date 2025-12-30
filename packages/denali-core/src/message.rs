@@ -4,7 +4,10 @@ use crate::{
     Interface,
     id::{IdFactory, ObjectId},
     sealed,
-    wire::serde::{Encode, MessageSize, SerdeError},
+    wire::{
+        MessageEncoder,
+        serde::{CompileTimeMessageSize, Encode, MessageHeader, MessageSize, SerdeError},
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,9 +67,23 @@ pub trait OutgoingMessage<T: MessageTypeMarker>: EncodeWithNewId {
     const OPCODE: u16;
 
     /// The type of response expected from this event/request.
-    type Response;
+    type Response: MessageResponse;
 
     fn sender(&self) -> &ObjectId<Self::Interface>;
+}
+
+pub trait MessageResponse {
+    fn with_id_factory(id_factory: IdFactory<'_>) -> Self;
+}
+impl MessageResponse for () {
+    fn with_id_factory(_id_factory: IdFactory<'_>) -> Self {
+        ()
+    }
+}
+impl<I: Interface> MessageResponse for ObjectId<I> {
+    fn with_id_factory(mut id_factory: IdFactory<'_>) -> Self {
+        unsafe { id_factory.alloc_typed_id().unwrap() }
+    }
 }
 
 pub trait EncodeWithNewId: MessageSize {
@@ -79,6 +96,14 @@ pub trait EncodeWithNewId: MessageSize {
     /// - An IO error occurs while writing to the data slice.
     /// - An invalid enum value is encountered while encoding an enum type.
     fn encode(&self, data: &mut [u8], id_factory: IdFactory<'_>) -> Result<usize, SerdeError>;
+}
+
+pub struct NewIdHint<I: Interface>(std::marker::PhantomData<I>);
+impl<I: Interface> NewIdHint<I> {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(std::marker::PhantomData)
+    }
 }
 
 pub(crate) enum MessageCoprod<E, R> {
@@ -139,6 +164,31 @@ where
             U::try_decode(interface, opcode, message_type, data).map(Self::new_request)
         }
     }
+}
+
+/// Encodes a message with the given object ID and opcode into the provided byte buffer.
+///
+/// # Errors
+///
+/// Returns an error if encoding fails. See [`Encode::encode`](serde::Encode::encode) for more details.
+pub fn encode_message<T: EncodeWithNewId>(
+    message: &T,
+    object_id: u32,
+    opcode: u16,
+    data: &mut [u8],
+    id_factory: IdFactory<'_>,
+) -> Result<usize, SerdeError> {
+    let header = MessageHeader {
+        object_id,
+        size: (MessageHeader::SIZE + message.size()) as u16,
+        opcode,
+    };
+    header.encode(&mut data[..])?;
+    let encoded_size = message.encode(&mut data[MessageHeader::SIZE..], id_factory)?;
+
+    let final_size = MessageHeader::SIZE + encoded_size;
+
+    Ok(final_size)
 }
 
 /// Errors that can occur while decoding a message.

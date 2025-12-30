@@ -22,9 +22,9 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
     match arg.arg_type {
         ArgType::GenericNewId => quote! {
             denali_core::wire::serde::DynamicallyTypedNewId {
-                interface: denali_core::wire::serde::String::new(#arg_access.interface()),
-                version: #arg_access.version(),
-                id: #arg_access.get()
+                interface: denali_core::wire::serde::String::new(I::INTERFACE),
+                version: I::MAX_VERSION,
+                id: 0
             }
         },
         ArgType::NewId { .. } => quote! {
@@ -51,7 +51,8 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
 pub fn build_message_encode_impl(
     message: &Message,
     message_ident: syn::Ident,
-    lifetime: &TokenStream,
+    bound_generics: &TokenStream,
+    generics: &TokenStream,
 ) -> TokenStream {
     let size_conversions = message
         .args
@@ -59,36 +60,33 @@ pub fn build_message_encode_impl(
         .map(arg_to_serde_type)
         .collect::<Vec<_>>();
 
+    //TODO: remove unwraps on client ID exhaustion (very low priority)
     let encode_conversions = message
         .args
         .iter()
-        .map(|arg| {
-            let arg_name = build_ident(&arg.name, Case::Snake);
-
-            match arg.arg_type.clone() {
-                ArgType::GenericNewId => {
-                    quote! {
-                        unsafe { id_factory.alloc_any_id() }
+        .map(|arg| match arg.arg_type.clone() {
+            ArgType::GenericNewId => {
+                quote! {
+                    unsafe {
+                        denali_core::wire::serde::DynamicallyTypedNewId {
+                            interface: denali_core::wire::serde::String::new(I::INTERFACE),
+                            version: I::MAX_VERSION,
+                            id: id_factory.peek_next_id().unwrap()
+                        }
                     }
                 }
-                ArgType::NewId { .. } => {
-                    quote! {
-                        unsafe { id_factory.alloc_typed_id() }
-                    }
-                }
-                _ => arg_to_serde_type(arg),
             }
+            ArgType::NewId { .. } => {
+                quote! {
+                    unsafe { id_factory.peek_next_id().unwrap() }
+                }
+            }
+            _ => arg_to_serde_type(arg),
         })
         .collect::<Vec<_>>();
 
-    let arg_names = message
-        .args
-        .iter()
-        .map(|arg| build_ident(&arg.name, Case::Snake))
-        .collect::<Vec<_>>();
-
     quote! {
-        impl #lifetime denali_core::wire::serde::MessageSize for #message_ident #lifetime {
+        impl #bound_generics denali_core::wire::serde::MessageSize for #message_ident #generics {
             fn size(&self) -> usize {
                 let mut size = 0;
 
@@ -100,12 +98,12 @@ pub fn build_message_encode_impl(
             }
         }
 
-        impl #lifetime denali_core::message::EncodeWithNewId for #message_ident #lifetime {
-            fn encode(&self, data: &mut [u8], id_factory: denali_core::id::IdFactory<'_>) -> Result<usize, denali_core::wire::serde::SerdeError> {
+        impl #bound_generics denali_core::message::EncodeWithNewId for #message_ident #generics {
+            fn encode(&self, data: &mut [u8], mut id_factory: denali_core::id::IdFactory<'_>) -> Result<usize, denali_core::wire::serde::SerdeError> {
                 let mut encoder = denali_core::wire::MessageEncoder::new(data);
 
                 #(
-                    encoder.write(&#size_conversions)?;
+                    encoder.write(&#encode_conversions)?;
                 )*
 
                 Ok(encoder.position() as usize)
