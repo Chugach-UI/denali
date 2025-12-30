@@ -24,8 +24,6 @@ use std::borrow::Borrow;
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 use thiserror::Error;
@@ -166,7 +164,7 @@ impl<I: Interface> ObjectId<I> {
 
     /// Returns the underlying `ObjectId`.
     #[must_use]
-    pub fn into_inner(self) -> AnyObjectId {
+    pub const fn into_inner(self) -> AnyObjectId {
         self.id
     }
 }
@@ -275,7 +273,7 @@ impl Default for IdManager {
 /// A reference to a [`IdManager`] that only allows for ID allocation
 pub struct IdFactory<'a>(&'a mut IdManager);
 impl<'a> IdFactory<'a> {
-    pub fn new(manager: &'a mut IdManager) -> Self {
+    pub const fn new(manager: &'a mut IdManager) -> Self {
         Self(manager)
     }
 

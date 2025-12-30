@@ -44,7 +44,7 @@ pub fn build_documentation(
         .or_else(|| {
             summary.map(|summary| Description {
                 summary: summary.clone(),
-                content: "".to_string(),
+                content: String::new(),
             })
         })
         .unwrap_or_default();
@@ -103,7 +103,7 @@ pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
 pub fn interface_path(interface_map: &BTreeMap<String, String>, interface: &str) -> TokenStream {
     let protocol = interface_map
         .get(interface)
-        .unwrap_or_else(|| panic!("Interface '{}' not found in interface map", interface))
+        .unwrap_or_else(|| panic!("Interface '{interface}' not found in interface map"))
         .clone();
 
     let protocol_ident = build_ident(&protocol, Case::Snake);
@@ -131,7 +131,7 @@ pub fn expand_argument_type(
             quote! { denali_core::id::DynamicObjectId #(<#lifetime>)* }
         }
         crate::protocol_parser::ArgType::NewId { interface } => {
-            let interface_path = interface_path(interface_map, &interface);
+            let interface_path = interface_path(interface_map, interface);
             quote! { ObjectId<#interface_path> }
         }
         crate::protocol_parser::ArgType::ObjectId {
@@ -142,7 +142,7 @@ pub fn expand_argument_type(
 
             let lifetime = lifetime.into_iter();
             let id_type = if let Some(interface) = interface {
-                let interface_path = interface_path(interface_map, &interface);
+                let interface_path = interface_path(interface_map, interface);
                 quote! { & #(#lifetime)* ObjectId<#interface_path> }
             } else {
                 quote! {
@@ -183,7 +183,7 @@ pub fn expand_argument_type(
             quote! {#path}
         }
         arg_type => {
-            let (type_, used) = arg_type_to_rust_type(&arg_type, lifetime);
+            let (type_, used) = arg_type_to_rust_type(arg_type, lifetime);
             lifetime_used = used;
             type_
         }

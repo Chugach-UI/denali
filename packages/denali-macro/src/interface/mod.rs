@@ -8,8 +8,8 @@ use quote::quote;
 
 use crate::{
     MessageType, build_ident,
-    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type, interface_path},
-    protocol_parser::{Arg, ArgType, Interface, InterfaceElement, Message, MessageKind, NewIdType},
+    helpers::{build_documentation, expand_argument_type, interface_path},
+    protocol_parser::{ArgType, Interface, InterfaceElement, Message, MessageKind, NewIdType},
     wire::{build_enum, build_message_encode_impl},
 };
 
@@ -116,7 +116,7 @@ fn build_incoming_message_enums(
         .map(|msg| {
             let event_name = build_ident(&msg.name, Case::Pascal);
 
-            let (fields, uses_lifetime) = build_message_fields(&ctx, interface_map, msg, false);
+            let (fields, uses_lifetime) = build_message_fields(ctx, interface_map, msg, false);
 
             needs_lifetime |= uses_lifetime;
 
@@ -208,7 +208,7 @@ fn build_outgoing_message_structs(
             NewIdType::None => quote! { () },
             NewIdType::Generic => quote! {  ObjectId<I> },
             NewIdType::Typed { interface } => {
-                let interface_path = interface_path(interface_map, &interface);
+                let interface_path = interface_path(interface_map, interface);
 
                 quote! {
                      ObjectId<#interface_path>
@@ -216,7 +216,7 @@ fn build_outgoing_message_structs(
             }
         };
 
-        let encode_impl = build_message_encode_impl(msg, name.clone(), &bound_generics, &generics);
+        let encode_impl = build_message_encode_impl(msg, &name, &bound_generics, &generics);
 
         quote! {
             pub struct #name #bound_generics #fields
@@ -245,7 +245,7 @@ fn build_outgoing_message_structs(
 fn build_interface(
     ctx: &InterfaceCtx,
     interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
+    _interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
     let documentation = build_documentation(Some(&interface.description), None, None, None);
     let interface_str = interface

@@ -145,7 +145,7 @@ fn transform_enum(enum_: serde::Enum) -> Enum {
 
 fn transform_enum_variant(variant: serde::Entry) -> EnumVariant {
     let value = if variant.value.contains("0x") {
-        u32::from_str_radix(variant.value.trim_start_matches("0x"), 16).unwrap() as i64
+        i64::from(u32::from_str_radix(variant.value.trim_start_matches("0x"), 16).unwrap())
     } else {
         variant.value.parse::<i64>().unwrap_or_else(|_| {
             panic!(
@@ -186,10 +186,10 @@ pub enum InterfaceElement {
     Enum(Enum),
 }
 impl InterfaceElement {
-    fn is_request(&self) -> bool {
+    const fn is_request(&self) -> bool {
         matches!(self, InterfaceElement::Request(_))
     }
-    fn is_event(&self) -> bool {
+    const fn is_event(&self) -> bool {
         matches!(self, InterfaceElement::Event(_))
     }
 }
@@ -234,10 +234,10 @@ pub enum ArgType {
     String,
 }
 impl ArgType {
-    pub fn is_nullable(&self) -> bool {
+    pub const fn is_nullable(&self) -> bool {
         matches!(self, ArgType::ObjectId { nullable: true, .. })
     }
-    pub fn is_new_id(&self) -> bool {
+    pub const fn is_new_id(&self) -> bool {
         matches!(self, ArgType::NewId { .. } | ArgType::GenericNewId)
     }
 }
@@ -277,7 +277,7 @@ pub struct Enum {
     pub variants: Vec<EnumVariant>,
 }
 impl Enum {
-    pub fn inner_type(&self) -> EnumInnerType {
+    pub const fn inner_type(&self) -> EnumInnerType {
         if self.bitfield {
             EnumInnerType::U32
         } else {

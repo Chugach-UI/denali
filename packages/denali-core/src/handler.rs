@@ -40,7 +40,7 @@ impl<'a, I: Interface, F: FnMut(I::Event<'a>)> Handler for EventHandler<'a, I, F
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
-        id: AnyObjectId,
+        _id: AnyObjectId,
     ) {
         let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
             interface,
@@ -82,7 +82,7 @@ impl<'a, I: Interface, F: FnMut(I::Request<'a>)> Handler for RequestHandler<'a, 
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
-        id: AnyObjectId,
+        _id: AnyObjectId,
     ) {
         let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
             interface,

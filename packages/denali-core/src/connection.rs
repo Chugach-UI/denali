@@ -4,7 +4,7 @@ use crate::{
     Interface,
     handler::Handler,
     id::ObjectId,
-    message::{Event, IncomingMessage, MessageTypeMarker, OutgoingMessage, Request},
+    message::{Event, MessageTypeMarker, OutgoingMessage, Request},
 };
 
 /// Connection types.
@@ -17,10 +17,12 @@ pub enum ConnectionType {
 }
 impl ConnectionType {
     /// Returns true if the connection type is client.
+    #[must_use] 
     pub fn is_client(&self) -> bool {
         *self == ConnectionType::Client
     }
     /// Returns true if the connection type is server.
+    #[must_use] 
     pub fn is_server(&self) -> bool {
         *self == ConnectionType::Server
     }

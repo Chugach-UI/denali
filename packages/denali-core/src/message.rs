@@ -4,10 +4,7 @@ use crate::{
     Interface,
     id::{IdFactory, ObjectId},
     sealed,
-    wire::{
-        MessageEncoder,
-        serde::{CompileTimeMessageSize, Encode, MessageHeader, MessageSize, SerdeError},
-    },
+    wire::serde::{CompileTimeMessageSize, Encode, MessageHeader, MessageSize, SerdeError},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -77,7 +74,7 @@ pub trait MessageResponse {
 }
 impl MessageResponse for () {
     fn with_id_factory(_id_factory: IdFactory<'_>) -> Self {
-        ()
+        ();
     }
 }
 impl<I: Interface> MessageResponse for ObjectId<I> {
@@ -111,11 +108,11 @@ pub(crate) enum MessageCoprod<E, R> {
     Request(R),
 }
 impl<E, R> MessageCoprod<E, R> {
-    pub fn new_event(event: E) -> Self {
+    pub const fn new_event(event: E) -> Self {
         Self::Event(event)
     }
 
-    pub fn new_request(request: R) -> Self {
+    pub const fn new_request(request: R) -> Self {
         Self::Request(request)
     }
 

@@ -1,16 +1,11 @@
-use std::collections::BTreeMap;
 
-use convert_case::{Case, Casing};
+use convert_case::Case;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 
 use crate::{
-    MessageType, build_ident,
-    helpers::{
-        arg_type_to_rust_type, build_documentation, expand_argument_type,
-        is_size_known_at_compile_time,
-    },
-    protocol_parser::{Arg, ArgType, Description, Interface, Message},
+    build_ident,
+    protocol_parser::{Arg, ArgType, Message},
 };
 
 fn arg_to_serde_type(arg: &Arg) -> TokenStream {
@@ -50,7 +45,7 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
 
 pub fn build_message_encode_impl(
     message: &Message,
-    message_ident: syn::Ident,
+    message_ident: &syn::Ident,
     bound_generics: &TokenStream,
     generics: &TokenStream,
 ) -> TokenStream {

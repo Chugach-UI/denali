@@ -3,9 +3,9 @@
 use std::{
     collections::HashMap,
     env,
-    io::{ErrorKind, IoSlice, IoSliceMut},
+    io::IoSliceMut,
     os::{
-        fd::{BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
+        fd::{FromRawFd, IntoRawFd, OwnedFd},
         unix::net::UnixStream,
     },
     path::PathBuf,
@@ -13,17 +13,13 @@ use std::{
 
 use denali_protocol::wayland::wl_display::WlDisplay;
 use thiserror::Error;
-use tokio::{
-    signal::unix::{Signal, SignalKind, signal},
-    sync::mpsc::{self, UnboundedSender},
-};
 use tokio_seqpacket::{UnixSeqpacket, ancillary::OwnedAncillaryMessage};
 
 use denali_core::{
     connection::ConnectionType,
     handler::Handler,
-    id::{AnyObjectId, IdFactory, IdManager, ObjectId},
-    message::{self, MessageResponse, encode_message},
+    id::{IdFactory, IdManager, ObjectId},
+    message::{MessageResponse, encode_message},
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
 };
 

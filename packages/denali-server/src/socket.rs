@@ -28,7 +28,7 @@ impl Socket {
     }
 
     pub fn new_with_path(path: &Path) -> Result<Self, SocketError> {
-        let listener = UnixSeqpacketListener::bind(path).unwrap();
+        let listener = UnixSeqpacketListener::bind(path)?;
         Ok(Self { listener })
     }
 }
