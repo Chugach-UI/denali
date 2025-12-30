@@ -6,11 +6,13 @@ use quote::quote;
 
 use crate::protocol_parser::{Arg, ArgType, Description};
 
-pub fn arg_type_to_rust_type(type_: &ArgType, lifetime: Option<&str>) -> TokenStream {
-    let lifetime = lifetime
-        .map(|l| syn::Lifetime::new(l, Span::call_site()))
-        .into_iter();
-    match type_ {
+pub fn arg_type_to_rust_type(
+    type_: &ArgType,
+    lifetime: Option<syn::Lifetime>,
+) -> (TokenStream, bool) {
+    let mut lifetime_used = false;
+    let lifetime = lifetime.into_iter();
+    let type_ = match type_ {
         ArgType::Uint
         | ArgType::Enum { .. }
         | ArgType::ObjectId { .. }
@@ -18,10 +20,17 @@ pub fn arg_type_to_rust_type(type_: &ArgType, lifetime: Option<&str>) -> TokenSt
         | ArgType::GenericNewId => quote! { u32 },
         ArgType::Int => quote! { i32 },
         ArgType::Fixed => quote! { denali_core::wire::fixed::Fixed },
-        ArgType::String => quote! { denali_core::wire::serde::String #(<#lifetime>)* },
-        ArgType::Array => quote! { denali_core::wire::serde::Array #(<#lifetime>)* },
-        ArgType::Fd => quote! { () },
-    }
+        ArgType::String => {
+            lifetime_used = true;
+            quote! { denali_core::wire::serde::String #(<#lifetime>)* }
+        }
+        ArgType::Array => {
+            lifetime_used = true;
+            quote! { denali_core::wire::serde::Array #(<#lifetime>)* }
+        } // ArgType::Fd => quote! { () },
+    };
+
+    (type_, lifetime_used)
 }
 
 pub fn build_documentation(
@@ -91,17 +100,68 @@ pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
     syn::Ident::new(&name, Span::call_site())
 }
 
+fn interface_path(interface_map: &BTreeMap<String, String>, interface: &str) -> TokenStream {
+    let protocol = interface_map
+        .get(interface)
+        .unwrap_or_else(|| panic!("Interface '{}' not found in interface map", interface))
+        .clone();
+
+    let protocol_ident = build_ident(&protocol, Case::Snake);
+    let interface_ident = build_ident(interface, Case::Snake);
+    let interface_type_ident = build_ident(interface, Case::Pascal);
+
+    quote! {
+        super::super::#protocol_ident::#interface_ident::#interface_type_ident
+    }
+}
+
+/// Returns arg type and a bool for if a lifetime was used
 pub fn expand_argument_type(
     arg: &Arg,
     interface_map: &BTreeMap<String, String>,
     lifetime: Option<&str>,
-) -> TokenStream {
-    match arg {
-        Arg {
-            arg_type: ArgType::Enum { enum_name: enum_ },
-            ..
+) -> (TokenStream, bool) {
+    let mut lifetime_used = false;
+    let lifetime = lifetime.map(|sym| syn::Lifetime::new(sym, Span::call_site()));
+
+    let expanded = match &arg.arg_type {
+        crate::protocol_parser::ArgType::GenericNewId => {
+            let lifetime = lifetime.into_iter();
+            lifetime_used = true;
+            quote! { denali_core::id::DynamicObjectId #(<#lifetime>)* }
+        }
+        crate::protocol_parser::ArgType::NewId { interface } => {
+            let interface_path = interface_path(interface_map, &interface);
+            quote! { ObjectId<#interface_path> }
+        }
+        crate::protocol_parser::ArgType::ObjectId {
+            interface,
+            nullable,
         } => {
-            let enum_parts = enum_.split('.').collect::<Vec<_>>();
+            lifetime_used = true;
+
+            let lifetime = lifetime.into_iter();
+            let id_type = if let Some(interface) = interface {
+                let interface_path = interface_path(interface_map, &interface);
+                quote! { & #(#lifetime)* ObjectId<#interface_path> }
+            } else {
+                quote! {
+                    & #(#lifetime)* AnyObjectId
+                }
+            };
+
+            if *nullable {
+                quote! {
+                    Option<#id_type>
+                }
+            } else {
+                quote! {
+                    #id_type
+                }
+            }
+        }
+        crate::protocol_parser::ArgType::Enum { enum_name } => {
+            let enum_parts = enum_name.split('.').collect::<Vec<_>>();
             let path = if enum_parts.len() == 1 {
                 let ident = build_ident(enum_parts[0], Case::Pascal);
                 quote! { #ident }
@@ -117,34 +177,19 @@ pub fn expand_argument_type(
 
                 quote! { super::super::#protocol::#interface::#ident }
             } else {
-                panic!("Invalid enum path: {enum_}");
+                panic!("Invalid enum path: {enum_name}");
             };
 
             quote! {#path}
         }
-        Arg {
-            arg_type: ArgType::NewId { .. },
-            ..
-        } => quote! {
-            denali_core::wire::serde::NewId
-        },
-        Arg {
-            arg_type: ArgType::GenericNewId,
-            ..
-        } => {
-            let lifetime = match lifetime {
-                Some(l) => {
-                    let lifetime = syn::Lifetime::new(l, Span::call_site());
-                    quote! { <#lifetime> }
-                }
-                None => quote! {},
-            };
-            quote! {
-                denali_core::wire::serde::DynamicallyTypedNewId #lifetime
-            }
+        arg_type => {
+            let (type_, used) = arg_type_to_rust_type(&arg_type, lifetime);
+            lifetime_used = used;
+            type_
         }
-        arg => arg_type_to_rust_type(&arg.arg_type, lifetime),
-    }
+    };
+
+    (expanded, lifetime_used)
 }
 
 pub fn is_size_known_at_compile_time(args: &[&Arg]) -> bool {

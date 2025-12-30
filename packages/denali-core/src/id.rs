@@ -21,6 +21,7 @@
 //! ```
 
 use std::borrow::Borrow;
+use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -35,12 +36,12 @@ use crate::wire::serde::RawObjectId;
 const CLIENT_MIN_ID: RawObjectId = 0x0000_0001;
 const CLIENT_MAX_ID: RawObjectId = 0xfeff_ffff;
 
-/// An owned object ID with a dynamic interface.
+/// An owned object ID with an unknown interface.
 ///
 /// See [`ObjectId`] for an owned object ID with a compile-time-known interface.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DynamicObjectId(NonZeroU32);
-impl DynamicObjectId {
+pub struct AnyObjectId(NonZeroU32);
+impl AnyObjectId {
     /// Creates a new `ObjectId` from a `RawObjectId`.
     ///
     /// # Panics
@@ -61,16 +62,65 @@ impl DynamicObjectId {
         self.0.get()
     }
 }
-impl Deref for DynamicObjectId {
+impl Deref for AnyObjectId {
     type Target = NonZeroU32;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl From<DynamicObjectId> for RawObjectId {
-    fn from(val: DynamicObjectId) -> Self {
+impl From<AnyObjectId> for RawObjectId {
+    fn from(val: AnyObjectId) -> Self {
         val.0.get()
+    }
+}
+
+/// An object ID tagged with an interface at runtime.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DynamicObjectId<'a>(NonZeroU32, u32, Cow<'a, str>);
+
+impl<'a> DynamicObjectId<'a> {
+    /// Creates a new `DynamicObjectId` from a `RawObjectId` and a string.
+    #[must_use]
+    pub const fn new(id: RawObjectId, version: u32, interface: Cow<'a, str>) -> Self {
+        let id = NonZeroU32::new(id).expect("DynamicObjectId cannot be zero");
+
+        Self(id, version, interface)
+    }
+
+    /// Returns the underlying `RawObjectId` value of the `ObjectId`.
+    #[must_use]
+    pub const fn get(&self) -> RawObjectId {
+        self.0.get()
+    }
+
+    /// Returns the interface
+    #[must_use]
+    pub fn interface(&self) -> &str {
+        self.2.borrow()
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.1
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum DynamicObjectIdError {
+    #[error("Interface name does not match")]
+    InvalidInterface,
+}
+
+impl<'a, I: Interface> TryFrom<DynamicObjectId<'a>> for ObjectId<I> {
+    type Error = DynamicObjectIdError;
+
+    fn try_from(value: DynamicObjectId<'a>) -> Result<Self, Self::Error> {
+        if value.2 == I::INTERFACE && value.1 <= I::MAX_VERSION {
+            Ok(unsafe { ObjectId::from_raw(value.get()) })
+        } else {
+            Err(DynamicObjectIdError::InvalidInterface)
+        }
     }
 }
 
@@ -79,16 +129,25 @@ impl From<DynamicObjectId> for RawObjectId {
 /// See [`DynamicObjectId`] for an owned object ID with a dynamic interface.
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectId<I: Interface> {
-    id: DynamicObjectId,
+    id: AnyObjectId,
     _interface: std::marker::PhantomData<I>,
 }
 
 impl<I: Interface> ObjectId<I> {
-    /// Creates a new `ObjectId` from a `DynamicObjectId`.
+    /// Creates a new `ObjectId` from an `AnyObjectId`.
     #[must_use]
-    pub const fn new(id: DynamicObjectId) -> Self {
+    pub const unsafe fn new(id: AnyObjectId) -> Self {
         Self {
             id,
+            _interface: std::marker::PhantomData,
+        }
+    }
+
+    /// Creates a new `ObjectId` from a `RawObjectId`.
+    #[must_use]
+    pub const unsafe fn from_raw(id: RawObjectId) -> Self {
+        Self {
+            id: unsafe { AnyObjectId::new(id) },
             _interface: std::marker::PhantomData,
         }
     }
@@ -101,28 +160,19 @@ impl<I: Interface> ObjectId<I> {
 
     /// Returns a reference to the underlying `ObjectId`.
     #[must_use]
-    pub const fn as_object_id(&self) -> &DynamicObjectId {
+    pub const fn as_object_id(&self) -> &AnyObjectId {
         &self.id
     }
 
     /// Returns the underlying `ObjectId`.
     #[must_use]
-    pub fn into_inner(self) -> DynamicObjectId {
+    pub fn into_inner(self) -> AnyObjectId {
         self.id
-    }
-
-    /// Returns a reference to the underlying `ObjectId`.
-    #[must_use]
-    pub const fn borrowed<'a>(&'a self) -> BorrowedObjectId<'a, I> {
-        BorrowedObjectId {
-            id: &self.id,
-            _interface: std::marker::PhantomData,
-        }
     }
 }
 
 impl<I: Interface> Deref for ObjectId<I> {
-    type Target = DynamicObjectId;
+    type Target = AnyObjectId;
 
     fn deref(&self) -> &Self::Target {
         &self.id
@@ -134,29 +184,13 @@ impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     }
 }
 
-/// A borrowed reference to an `ObjectId`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BorrowedObjectId<'a, I: Interface> {
-    id: &'a DynamicObjectId,
-    _interface: std::marker::PhantomData<I>,
-}
-
-impl<'a, I: Interface> BorrowedObjectId<'a, I> {}
-impl<'a, I: Interface> Deref for BorrowedObjectId<'a, I> {
-    type Target = DynamicObjectId;
-
-    fn deref(&self) -> &Self::Target {
-        self.id
-    }
-}
-
 #[derive(Debug, Clone)]
-struct IdManagerInner {
+pub struct IdManager {
     next: RawObjectId,
     free_list: BinaryHeap<Reverse<RawObjectId>>,
 }
 
-impl IdManagerInner {
+impl IdManager {
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -224,33 +258,22 @@ impl IdManagerInner {
         }
     }
 }
-
-impl Default for IdManagerInner {
+impl Default for IdManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// A thread-safe manager for allocating and recycling unique client IDs.
-#[derive(Debug, Clone, Default)]
-pub struct IdManager(Arc<Mutex<IdManagerInner>>);
-impl IdManager {
-    #[must_use]
-    /// Creates a new `IdManager`.
-    ///
-    /// The first ID allocated will be `CLIENT_MIN_ID`.
-    pub fn new() -> Self {
-        Self(Arc::new(Mutex::new(IdManagerInner::new())))
+/// A reference to a [`IdManager`] that only allows for ID allocation
+pub struct IdFactory<'a>(&'a mut IdManager);
+impl<'a> IdFactory<'a> {
+    pub fn new(manager: &'a mut IdManager) -> Self {
+        Self(manager)
     }
 
     /// Peeks at the next available id without allocating it.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if all client IDs have been exhausted.
     pub fn peek_next_id(&self) -> Result<RawObjectId, IdManagerError> {
-        let inner = self.0.lock().unwrap();
-        inner.peek_next_id()
+        self.0.peek_next_id()
     }
 
     /// Gets the next available id
@@ -258,14 +281,16 @@ impl IdManager {
     /// # Errors
     ///
     /// This function will return an error if all client IDs have been exhausted.
-    pub fn alloc_id(&self) -> Result<RawObjectId, IdManagerError> {
-        let mut inner = self.0.lock().unwrap();
-        inner.alloc_id()
+    pub fn alloc_id(&mut self) -> Result<RawObjectId, IdManagerError> {
+        self.0.alloc_id()
     }
-    /// Return a deleted ID to the pool of available IDs.
-    pub fn recycle_id(&self, id: impl Into<RawObjectId>) {
-        let mut inner = self.0.lock().unwrap();
-        inner.recycle_id(id.into());
+
+    pub unsafe fn alloc_any_id(&mut self) -> Result<AnyObjectId, IdManagerError> {
+        self.alloc_id().map(|id| unsafe { AnyObjectId::new(id) })
+    }
+
+    pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
+        self.alloc_id().map(|id| unsafe { ObjectId::from_raw(id) })
     }
 }
 

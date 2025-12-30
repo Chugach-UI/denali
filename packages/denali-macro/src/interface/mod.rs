@@ -7,23 +7,121 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
-    build_ident,
-    helpers::build_documentation,
-    protocol_parser::{ArgType, Interface, InterfaceElement, Message},
-    wire::build_enum,
+    MessageType, build_ident,
+    helpers::{arg_type_to_rust_type, build_documentation, expand_argument_type},
+    protocol_parser::{Arg, ArgType, Interface, InterfaceElement, Message, MessageKind},
+    wire::{build_enum, build_message_encode_impl},
 };
 
-fn event_needs_lifetime(event: &Message) -> bool {
-    event.args.iter().any(|arg| {
-        matches!(
-            arg.arg_type,
-            ArgType::String | ArgType::Array | ArgType::GenericNewId
-        )
-    })
+#[derive(Debug, Clone)]
+pub struct InterfaceCtx {
+    pub interface_name: syn::Ident,
+    pub interface_str: String,
+
+    pub event_enum_name: syn::Ident,
+    pub event_enum_needs_lifetime: bool,
+    pub request_enum_name: syn::Ident,
+    pub request_enum_needs_lifetime: bool,
 }
 
-fn build_event_enum(interface: &Interface, events: &[Message]) -> TokenStream {
-    let needs_lifetime = events.iter().any(event_needs_lifetime);
+fn build_message_fields(
+    ctx: &InterfaceCtx,
+    interface_map: &BTreeMap<String, String>,
+    message: &Message,
+    outgoing: bool,
+) -> (TokenStream, bool) {
+    let interface_name = &ctx.interface_name;
+    let vis = if outgoing {
+        quote! { pub }
+    } else {
+        quote! {}
+    };
+
+    let mut needs_lifetime = false;
+
+    let sender_field = if outgoing {
+        if message.message_type == MessageKind::Destructor {
+            quote! { #vis sender: ObjectId<#interface_name>, }
+        } else {
+            needs_lifetime = true;
+            quote! { #vis sender: &'a ObjectId<#interface_name>, }
+        }
+    } else {
+        quote! {}
+    };
+
+    let fields = message
+        .args
+        .iter()
+        .filter(|field| {
+            if outgoing {
+                !field.arg_type.is_new_id()
+            } else {
+                true
+            }
+        })
+        .map(|arg| {
+            let (field_type, uses_lifetime) = expand_argument_type(arg, interface_map, Some("'a"));
+            needs_lifetime |= uses_lifetime;
+
+            let field_name = build_ident(&arg.name, Case::Snake);
+            quote! { #field_name: #field_type }
+        });
+
+    (
+        quote! {
+            {
+                #sender_field
+                #(#vis #fields),*
+            }
+        },
+        needs_lifetime,
+    )
+}
+
+fn build_incoming_message_enums(
+    ctx: &mut InterfaceCtx,
+    interface_map: &BTreeMap<String, String>,
+    interface: &Interface,
+    message_type: MessageType,
+) -> TokenStream {
+    let incoming_enum_name = if message_type == MessageType::Request {
+        &ctx.request_enum_name
+    } else {
+        &ctx.event_enum_name
+    };
+    let interface_name = &ctx.interface_name;
+
+    let messages = interface.elements.iter().filter_map(|elem| match elem {
+        InterfaceElement::Request(message) if message_type == MessageType::Request => Some(message),
+        InterfaceElement::Event(message) if message_type == MessageType::Event => Some(message),
+        _ => None,
+    });
+
+    let message_type_marker = if message_type == MessageType::Request {
+        quote! { denali_core::message::Request }
+    } else {
+        quote! { denali_core::message::Event }
+    };
+
+    let mut needs_lifetime = false;
+    let variants = messages
+        .map(|msg| {
+            let event_name = build_ident(&msg.name, Case::Pascal);
+
+            let (fields, uses_lifetime) = build_message_fields(&ctx, interface_map, msg, false);
+
+            needs_lifetime |= uses_lifetime;
+
+            quote! { #event_name #fields }
+        })
+        .collect::<Vec<_>>();
+
+    if message_type == MessageType::Request {
+        ctx.request_enum_needs_lifetime = needs_lifetime;
+    } else {
+        ctx.event_enum_needs_lifetime = needs_lifetime;
+    }
 
     let lifetime = if needs_lifetime {
         quote! { <'a> }
@@ -31,59 +129,90 @@ fn build_event_enum(interface: &Interface, events: &[Message]) -> TokenStream {
         quote! {}
     };
 
-    let variants = events.iter().map(|event| {
-        let variant_ident = build_ident(&event.name, Case::Pascal);
-        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
-        let event_struct_name = if event_needs_lifetime(event) {
-            quote! {#event_struct_name<'a>}
-        } else {
-            quote! {#event_struct_name}
-        };
-
-        quote! {
-            #variant_ident(#event_struct_name)
-        }
-    });
-    let try_decode_opcode_arms = events.iter().enumerate().map(|(i, event)| {
-        let variant_ident = build_ident(&event.name, Case::Pascal);
-        let event_struct_name = build_ident(&format!("{}Event", event.name), Case::Pascal);
-
-        let opcode = i as u16;
-
-        quote! {
-            #opcode => #event_struct_name::decode(data).map(Self::#variant_ident).map_err(Into::into),
-        }
-    });
-
-    let name = build_ident(&format!("{}Event", interface.name), Case::Pascal);
-    let interface_ident = build_ident(&interface.name, Case::Pascal);
-
     quote! {
-        #[derive(Debug, Clone, PartialEq, Eq)]
-        pub enum #name #lifetime {
+        pub enum #incoming_enum_name #lifetime {
             #(#variants),*
         }
-        impl #lifetime denali_core::handler::Message for #name #lifetime {
-            fn try_decode(interface: &str, opcode: u16, data: &[u8]) -> Result<Self, denali_core::handler::DecodeMessageError> {
-                use denali_core::wire::serde::Decode;
-                use denali_core::Interface;
-                if interface != #interface_ident::INTERFACE {
-                    return Err(denali_core::handler::DecodeMessageError::UnknownInterface(interface.to_string()));
-                }
 
-                match opcode {
-                    #(#try_decode_opcode_arms)*
-                    _ => Err(denali_core::handler::DecodeMessageError::UnknownOpcode(opcode)),
-                }
+        impl #lifetime IncomingMessage<#message_type_marker> for #incoming_enum_name #lifetime {
+            type Interface = #interface_name;
+            fn try_decode(
+                interface: &str,
+                opcode: u16,
+                message_type: denali_core::message::MessageType,
+                data: &[u8],
+            ) -> Result<Self, denali_core::message::DecodeMessageError> {
+                todo!()
             }
-        }
-        impl #lifetime denali_core::handler::MessageTarget for #name #lifetime {
-            type Target = #interface_ident;
         }
     }
 }
 
-pub fn build_interface(
+fn build_outgoing_message_structs(
+    ctx: &mut InterfaceCtx,
+    interface_map: &BTreeMap<String, String>,
+    interface: &Interface,
+    message_type: MessageType,
+) -> TokenStream {
+    let interface_name = &ctx.interface_name;
+    let suffix = if message_type == MessageType::Request {
+        "Request"
+    } else {
+        "Event"
+    };
+    let prefix = &ctx.interface_str;
+
+    let messages = interface.elements.iter().filter_map(|elem| match elem {
+        InterfaceElement::Request(message) if message_type == MessageType::Request => Some(message),
+        InterfaceElement::Event(message) if message_type == MessageType::Event => Some(message),
+        _ => None,
+    });
+
+    let message_type_marker = if message_type == MessageType::Request {
+        quote! { denali_core::message::Request }
+    } else {
+        quote! { denali_core::message::Event }
+    };
+
+    let structs = messages.map(|msg| {
+        let name = build_ident(&format!("{prefix}_{}{suffix}", msg.name), Case::Pascal);
+        let opcode = msg.opcode as u16;
+        let (fields, uses_lifetime) = build_message_fields(ctx, interface_map, msg, true);
+
+        let lifetime = if uses_lifetime {
+            quote! { <'a> }
+        } else {
+            quote! {}
+        };
+
+        let encode_impl = build_message_encode_impl(msg, name.clone(), &lifetime);
+
+        quote! {
+            pub struct #name #lifetime #fields
+
+            impl #lifetime OutgoingMessage<#message_type_marker> for #name #lifetime {
+                type Interface = #interface_name;
+                const OPCODE: u16 = #opcode;
+
+                /// The type of response expected from this event/request.
+                type Response = ();
+
+                fn sender(&self) -> &ObjectId<Self::Interface> {
+                    &self.sender
+                }
+            }
+
+            #encode_impl
+        }
+    });
+
+    quote! {
+        #(#structs)*
+    }
+}
+
+fn build_interface(
+    ctx: &InterfaceCtx,
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
@@ -92,20 +221,33 @@ pub fn build_interface(
         .name
         .without_boundaries(&[Boundary::LOWER_DIGIT])
         .to_case(Case::Snake);
-    let name = build_ident(&interface.name, Case::Pascal);
+    let name = &ctx.interface_name;
     let version = interface.version;
+
+    let event_enum_name = &ctx.event_enum_name;
+    let event_lifetime = if ctx.event_enum_needs_lifetime {
+        quote! { <'a> }
+    } else {
+        quote! {}
+    };
+    let request_enum_name = &ctx.request_enum_name;
+    let request_lifetime = if ctx.request_enum_needs_lifetime {
+        quote! { <'a> }
+    } else {
+        quote! {}
+    };
 
     quote! {
         #documentation
         pub struct #name(());
 
-        impl denali_core::Interface for #name {
+        impl Interface for #name {
             const INTERFACE: &'static str = #interface_str;
 
             const MAX_VERSION: u32 = #version;
 
-            type Event = Event;
-            type Request = Request;
+            type Event<'a> = #event_enum_name #event_lifetime;
+            type Request<'a> = #request_enum_name #request_lifetime;
         }
     }
 }
@@ -114,11 +256,22 @@ pub fn build_interface_module(
     interface: &Interface,
     interface_map: &BTreeMap<String, String>,
 ) -> TokenStream {
-    let interface_name = build_ident(&interface.name, Case::Snake);
+    let interface_module_name = build_ident(&interface.name, Case::Snake);
+    let interface_type_name = build_ident(&interface.name, Case::Pascal);
+
+    let event_enum_name = build_ident(&format!("{}Event", interface.name), Case::Pascal);
+    let request_enum_name = build_ident(&format!("{}Request", interface.name), Case::Pascal);
+    let mut ctx = InterfaceCtx {
+        interface_name: interface_type_name,
+        interface_str: interface.name.clone(),
+        event_enum_name,
+        request_enum_name,
+        event_enum_needs_lifetime: false,
+        request_enum_needs_lifetime: false,
+    };
+
     let interface_desc = build_documentation(Some(&interface.description), None, None, None);
     let interface_version = interface.version;
-
-    let type_name = build_ident(&interface.name, Case::Pascal);
 
     let enums = interface.elements.iter().filter_map(|element| {
         if let InterfaceElement::Enum(enum_) = element {
@@ -128,39 +281,32 @@ pub fn build_interface_module(
         }
     });
 
-    let interface = build_interface(interface, interface_map);
+    let incoming_event_enum =
+        build_incoming_message_enums(&mut ctx, interface_map, interface, MessageType::Event);
+    let incoming_request_enum =
+        build_incoming_message_enums(&mut ctx, interface_map, interface, MessageType::Request);
+
+    let outgoing_event_structs =
+        build_outgoing_message_structs(&mut ctx, interface_map, interface, MessageType::Event);
+    let outgoing_request_structs =
+        build_outgoing_message_structs(&mut ctx, interface_map, interface, MessageType::Request);
+
+    let interface = build_interface(&ctx, interface, interface_map);
 
     quote! {
         #interface_desc
-        pub mod #interface_name {
+        pub mod #interface_module_name {
+            use denali_core::prelude::*;
+
             pub const VERSION: u32 = #interface_version;
 
             #interface
 
-            pub struct Request;
-            impl denali_core::message::IncomingMessage<denali_core::message::Request> for Request {
-                type Interface = #type_name;
-                fn try_decode(
-                    interface: &str,
-                    opcode: u16,
-                    message_type: denali_core::message::MessageType,
-                    data: &[u8],
-                ) -> Result<Self, denali_core::message::DecodeMessageError> {
-                    todo!()
-                }
-            }
-            pub struct Event;
-            impl denali_core::message::IncomingMessage<denali_core::message::Event> for Event {
-                type Interface = #type_name;
-                fn try_decode(
-                    interface: &str,
-                    opcode: u16,
-                    message_type: denali_core::message::MessageType,
-                    data: &[u8],
-                ) -> Result<Self, denali_core::message::DecodeMessageError> {
-                    todo!()
-                }
-            }
+            #incoming_event_enum
+            #incoming_request_enum
+
+            #outgoing_event_structs
+            #outgoing_request_structs
 
             #(#enums)*
         }

@@ -48,24 +48,21 @@ pub trait Connection<'a> {
     /// On a server connection, the handler will be called when the object receives a request.
     fn add_handler<I: Interface, H: Handler + 'a>(&mut self, object: &ObjectId<I>, handler: H);
 
-    fn send_message<I: Interface, M: MessageTypeMarker, O: OutgoingMessage<M>>(
+    fn send_message<M: MessageTypeMarker, O: OutgoingMessage<M>>(
         &mut self,
-        object: &ObjectId<I>,
         message: O,
     ) -> Result<O::Response, ()>;
 
-    fn send_event<I: Interface, O: OutgoingMessage<Event>>(
+    fn send_event<O: OutgoingMessage<Event>>(
         &mut self,
-        object: &ObjectId<I>,
         message: O,
     ) -> Result<O::Response, ()> {
-        self.send_message(object, message)
+        self.send_message(message)
     }
-    fn send_request<I: Interface, O: OutgoingMessage<Request>>(
+    fn send_request<O: OutgoingMessage<Request>>(
         &mut self,
-        object: &ObjectId<I>,
         message: O,
     ) -> Result<O::Response, ()> {
-        self.send_message(object, message)
+        self.send_message(message)
     }
 }

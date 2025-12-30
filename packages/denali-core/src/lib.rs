@@ -12,6 +12,13 @@ mod sealed {
     pub trait Sealed {}
 }
 
+pub mod prelude {
+    pub use crate::Interface;
+    pub use crate::connection::Connection;
+    pub use crate::id::{AnyObjectId, ObjectId};
+    pub use crate::message::{IncomingMessage, OutgoingMessage};
+}
+
 //TODO: Rename and refactor for use in client and server!!!
 // pub mod proxy;
 // pub mod store;
@@ -32,7 +39,7 @@ pub trait Interface {
     const MAX_VERSION: u32;
 
     /// The event type for this interface.
-    type Event: IncomingMessage<Event, Interface = Self>;
+    type Event<'a>: IncomingMessage<Event, Interface = Self>;
     /// The request type for this interface.
-    type Request: IncomingMessage<Request, Interface = Self>;
+    type Request<'a>: IncomingMessage<Request, Interface = Self>;
 }

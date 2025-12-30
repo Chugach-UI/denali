@@ -15,6 +15,12 @@ use protocol_parser::Protocol;
 use quote::quote;
 use walkdir::WalkDir;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MessageType {
+    Request,
+    Event,
+}
+
 #[proc_macro]
 pub fn wayland_protocols(input: TokenStream) -> TokenStream {
     let expr = syn::parse_macro_input!(input as syn::LitStr);

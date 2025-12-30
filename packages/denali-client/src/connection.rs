@@ -22,8 +22,12 @@ use tokio_seqpacket::{UnixSeqpacket, ancillary::OwnedAncillaryMessage};
 use denali_core::{
     connection::ConnectionType,
     handler::Handler,
-    id::{DynamicObjectId, ObjectId},
-    wire::serde::{Decode, MessageHeader, RawObjectId, SerdeError},
+    id::{AnyObjectId, ObjectId},
+    message,
+    wire::{
+        encode_message,
+        serde::{Decode, MessageHeader, RawObjectId, SerdeError},
+    },
 };
 
 /// A basic, single threaded, implementation of a client connection to a Wayland server.
@@ -65,7 +69,7 @@ impl Connection<'_> {
 
         let socket = UnixSeqpacket::try_from(socket_fd).map_err(ConnectionError::ConnectError)?;
 
-        let display_id = unsafe { ObjectId::new(DynamicObjectId::new(1)) };
+        let display_id = unsafe { ObjectId::new(AnyObjectId::new(1)) };
 
         Ok((
             Self {
@@ -146,12 +150,10 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
     }
 
     fn send_message<
-        I: denali_core::Interface,
         M: denali_core::message::MessageTypeMarker,
         O: denali_core::message::OutgoingMessage<M>,
     >(
         &mut self,
-        object: &ObjectId<I>,
         message: O,
     ) -> Result<O::Response, ()> {
         const {
@@ -163,15 +165,20 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
         }
 
         // Reserve space for the message in the encoding buffer
-        self.encoding_buf.reserve(
-            message
-                .encoded_size()
-                .saturating_sub(self.encoding_buf.capacity()),
-        );
+        self.encoding_buf
+            .reserve(message.size().saturating_sub(self.encoding_buf.capacity()));
 
         // Encode the message
-        message.encode(&mut self.encoding_buf).map_err(|_| ())?;
+        encode_message(
+            &message,
+            message.sender().get(),
+            O::OPCODE,
+            &mut self.encoding_buf,
+        )
+        .map_err(|_| ())?;
 
+        // Send the message over the socket
+        dbg!(&self.encoding_buf);
         todo!()
     }
 }

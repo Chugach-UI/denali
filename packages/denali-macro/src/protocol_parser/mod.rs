@@ -59,19 +59,46 @@ fn transform_message(message: serde::Message, opcode: u32) -> Message {
         _ => unreachable!(),
     };
 
+    let new_id_arg = message.args.iter().find(|arg| arg.type_ == "new_id");
+    let new_id_type = match new_id_arg {
+        Some(arg) if arg.interface.is_some() => NewIdType::Typed {
+            interface: arg.interface.clone().unwrap(),
+        },
+        Some(_) => NewIdType::Generic,
+        None => NewIdType::None,
+    };
+
     Message {
         name: message.name,
         opcode,
         message_type,
         deprecated_since: message.deprecated_since,
         description: transform_description(message.description),
-        args: message.args.into_iter().map(transform_arg).collect(),
+        args: message
+            .args
+            .clone()
+            .into_iter()
+            .filter(|arg| arg.type_ != "fd")
+            .map(transform_arg)
+            .collect(),
+        fd_args: message
+            .args
+            .into_iter()
+            .filter(|arg| arg.type_ == "fd")
+            .map(|arg| FdArg {
+                name: arg.name,
+                summary: arg.summary.unwrap_or_default(),
+                description: transform_description(arg.description),
+            })
+            .collect(),
+        new_id_type,
     }
 }
 
 fn transform_arg(arg: serde::Arg) -> Arg {
     let arg_type = match arg.type_.as_str() {
         "object" => ArgType::ObjectId {
+            interface: arg.interface,
             nullable: arg.allow_null.unwrap_or(false),
         },
 
@@ -91,7 +118,7 @@ fn transform_arg(arg: serde::Arg) -> Arg {
         "string" => ArgType::String,
         "array" => ArgType::Array,
 
-        "fd" => ArgType::Fd,
+        "fd" => panic!("internal error. an fd arg was not filtered out properly"),
 
         _ => panic!("Unknown argument type '{}'", arg.type_),
     };
@@ -182,31 +209,57 @@ pub struct Message {
     pub deprecated_since: Option<String>,
     pub description: Description,
     pub args: Vec<Arg>,
+    pub new_id_type: NewIdType,
+    pub fd_args: Vec<FdArg>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArgType {
     GenericNewId,
-    NewId { interface: String },
-    ObjectId { nullable: bool },
-    Enum { enum_name: String },
+    NewId {
+        interface: String,
+    },
+    ObjectId {
+        interface: Option<String>,
+        nullable: bool,
+    },
+    Enum {
+        enum_name: String,
+    },
     Uint,
     Int,
     Fixed,
     Array,
-    Fd,
+    // Fd,
     String,
 }
 impl ArgType {
     pub fn is_nullable(&self) -> bool {
-        matches!(self, ArgType::ObjectId { nullable: true })
+        matches!(self, ArgType::ObjectId { nullable: true, .. })
     }
+    pub fn is_new_id(&self) -> bool {
+        matches!(self, ArgType::NewId { .. } | ArgType::GenericNewId)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NewIdType {
+    None,
+    Generic,
+    Typed { interface: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub name: String,
     pub arg_type: ArgType,
+    pub summary: String,
+    pub description: Description,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FdArg {
+    pub name: String,
     pub summary: String,
     pub description: Description,
 }

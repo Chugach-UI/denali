@@ -1,6 +1,11 @@
 use thiserror::Error;
 
-use crate::{Interface, sealed};
+use crate::{
+    Interface,
+    id::{IdFactory, ObjectId},
+    sealed,
+    wire::serde::{Encode, MessageSize, SerdeError},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageType {
@@ -54,17 +59,26 @@ pub trait IncomingMessage<T: MessageTypeMarker> {
 }
 
 /// Represents a message (either request or event) outgoing over the wayland wire.
-pub trait OutgoingMessage<T: MessageTypeMarker> {
+pub trait OutgoingMessage<T: MessageTypeMarker>: EncodeWithNewId {
     type Interface: Interface;
+    const OPCODE: u16;
 
     /// The type of response expected from this event/request.
     type Response;
 
-    /// Returns the number of bytes required to encode the message.
-    fn encoded_size(&self) -> usize;
+    fn sender(&self) -> &ObjectId<Self::Interface>;
+}
 
-    /// Encode the message into a byte buffer.
-    fn encode(&self, data: &mut [u8]) -> Result<(), EncodeMessageError>;
+pub trait EncodeWithNewId: MessageSize {
+    /// Encodes this instance into the provided byte slice.
+    ///
+    /// # Errors
+    ///
+    /// This function returns errors if:
+    /// - The provided data slice is not large enough to contain the encoded type.
+    /// - An IO error occurs while writing to the data slice.
+    /// - An invalid enum value is encountered while encoding an enum type.
+    fn encode(&self, data: &mut [u8], id_factory: IdFactory<'_>) -> Result<usize, SerdeError>;
 }
 
 pub(crate) enum MessageCoprod<E, R> {

@@ -2,28 +2,28 @@
 
 use crate::{
     Interface,
-    id::{BorrowedObjectId, DynamicObjectId},
+    id::AnyObjectId,
     message::{IncomingMessage, MessageCoprod, MessageType},
 };
 
 /// A trait for handling Wayland messages.
 pub trait Handler: crate::sealed::Sealed {
-    fn handle_message<'a>(
+    fn handle_message(
         &mut self,
         interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
-        id: DynamicObjectId,
+        id: AnyObjectId,
     );
 }
 
-pub struct EventHandler<I: Interface, F: FnMut(I::Event)> {
+pub struct EventHandler<'a, I: Interface, F: FnMut(I::Event<'a>)> {
     handler: F,
-    _marker: std::marker::PhantomData<I>,
+    _marker: std::marker::PhantomData<(I, fn(&'a ()))>,
 }
 
-impl<I: Interface, F: FnMut(I::Event)> EventHandler<I, F> {
+impl<'a, I: Interface, F: FnMut(I::Event<'a>)> EventHandler<'a, I, F> {
     pub fn new(handler: F) -> Self {
         Self {
             handler,
@@ -31,18 +31,18 @@ impl<I: Interface, F: FnMut(I::Event)> EventHandler<I, F> {
         }
     }
 }
-impl<I: Interface, F: FnMut(I::Event)> crate::sealed::Sealed for EventHandler<I, F> {}
+impl<'a, I: Interface, F: FnMut(I::Event<'a>)> crate::sealed::Sealed for EventHandler<'a, I, F> {}
 
-impl<I: Interface, F: FnMut(I::Event)> Handler for EventHandler<I, F> {
-    fn handle_message<'a>(
+impl<'a, I: Interface, F: FnMut(I::Event<'a>)> Handler for EventHandler<'a, I, F> {
+    fn handle_message(
         &mut self,
         interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
-        id: DynamicObjectId,
+        id: AnyObjectId,
     ) {
-        let Ok(message) = MessageCoprod::<I::Event, I::Request>::try_decode(
+        let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
             interface,
             opcode,
             message_type,
@@ -57,13 +57,16 @@ impl<I: Interface, F: FnMut(I::Event)> Handler for EventHandler<I, F> {
     }
 }
 
-pub struct RequestHandler<I: Interface, F: FnMut(I::Request)> {
+pub struct RequestHandler<'a, I: Interface, F: FnMut(I::Request<'a>)> {
     handler: F,
-    _marker: std::marker::PhantomData<I>,
+    _marker: std::marker::PhantomData<(I, fn(&'a ()))>,
 }
-impl<I: Interface, F: FnMut(I::Request)> crate::sealed::Sealed for RequestHandler<I, F> {}
+impl<'a, I: Interface, F: FnMut(I::Request<'a>)> crate::sealed::Sealed
+    for RequestHandler<'a, I, F>
+{
+}
 
-impl<I: Interface, F: FnMut(I::Request)> RequestHandler<I, F> {
+impl<'a, I: Interface, F: FnMut(I::Request<'a>)> RequestHandler<'a, I, F> {
     pub fn new(handler: F) -> Self {
         Self {
             handler,
@@ -72,16 +75,16 @@ impl<I: Interface, F: FnMut(I::Request)> RequestHandler<I, F> {
     }
 }
 
-impl<I: Interface, F: FnMut(I::Request)> Handler for RequestHandler<I, F> {
-    fn handle_message<'a>(
+impl<'a, I: Interface, F: FnMut(I::Request<'a>)> Handler for RequestHandler<'a, I, F> {
+    fn handle_message(
         &mut self,
         interface: &str,
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
-        id: DynamicObjectId,
+        id: AnyObjectId,
     ) {
-        let Ok(message) = MessageCoprod::<I::Event, I::Request>::try_decode(
+        let Ok(message) = MessageCoprod::<I::Event<'a>, I::Request<'a>>::try_decode(
             interface,
             opcode,
             message_type,
