@@ -17,12 +17,12 @@ pub enum ConnectionType {
 }
 impl ConnectionType {
     /// Returns true if the connection type is client.
-    #[must_use] 
+    #[must_use]
     pub fn is_client(&self) -> bool {
         *self == ConnectionType::Client
     }
     /// Returns true if the connection type is server.
-    #[must_use] 
+    #[must_use]
     pub fn is_server(&self) -> bool {
         *self == ConnectionType::Server
     }
@@ -31,7 +31,7 @@ impl ConnectionType {
 /// A trait implemented by both client and server connections.
 ///
 /// This trait provides methods for managing handlers, sending requests, and sending events.
-pub trait Connection<'a> {
+pub trait Connection<'h> {
     type Error;
 
     /// Returns the type of the connection.
@@ -50,7 +50,11 @@ pub trait Connection<'a> {
     ///
     /// On a client connection, the handler will be called when the object receives an event.
     /// On a server connection, the handler will be called when the object receives a request.
-    fn add_handler<I: Interface, H: Handler + 'a>(&mut self, object: &ObjectId<I>, handler: H);
+    fn add_handler<I: Interface, H: Handler<'h, Connection = Self> + 'h>(
+        &mut self,
+        object: &ObjectId<I>,
+        handler: H,
+    );
 
     async fn send_message<M: MessageTypeMarker, O: OutgoingMessage<M>>(
         &mut self,

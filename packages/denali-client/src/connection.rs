@@ -9,6 +9,7 @@ use std::{
         unix::net::UnixStream,
     },
     path::PathBuf,
+    pin::Pin,
 };
 
 use denali_protocol::wayland::wl_display::WlDisplay;
@@ -19,8 +20,9 @@ use tokio_seqpacket::{
 };
 
 use denali_core::{
+    Interface,
     connection::ConnectionType,
-    handler::Handler,
+    handler::{EventHandler, Handler},
     id::{AnyObjectId, IdFactory, IdManager, ObjectId},
     message::{MessageResponse, encode_message},
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
@@ -33,7 +35,7 @@ pub struct Connection<'a> {
 
     id_manager: IdManager,
 
-    handlers: HashMap<RawObjectId, Box<dyn Handler + 'a>>,
+    handlers: HashMap<RawObjectId, Option<Box<dyn Handler<'a, Connection = Self> + 'a>>>,
 }
 
 impl Connection<'_> {
@@ -175,14 +177,26 @@ impl Connection<'_> {
         loop {
             let packet = self.next_packet().await?;
 
-            if let Some(handler) = self.handlers.get_mut(&packet.header.object_id) {
-                handler.handle_message(
+            let Some(handler) = self.handlers.get_mut(&packet.header.object_id) else {
+                continue;
+            };
+
+            let mut handler = handler.take().unwrap();
+
+            handler
+                .handle_message(
                     packet.header.opcode,
                     denali_core::message::MessageType::Event,
                     &packet.body,
                     unsafe { AnyObjectId::new(packet.header.object_id) },
-                );
-            }
+                    self,
+                )
+                .await;
+
+            self.handlers
+                .get_mut(&packet.header.object_id)
+                .unwrap()
+                .replace(handler);
         }
     }
 }
@@ -194,12 +208,12 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
         ConnectionType::Client
     }
 
-    fn add_handler<I: denali_core::Interface, H: Handler + 'a>(
+    fn add_handler<I: denali_core::Interface, H: Handler<'a, Connection = Self> + 'a>(
         &mut self,
         object: &ObjectId<I>,
         handler: H,
     ) {
-        self.handlers.insert(object.get(), Box::new(handler));
+        self.handlers.insert(object.get(), Some(Box::new(handler)));
     }
 
     async fn send_message<
@@ -240,6 +254,25 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
         Ok(response)
     }
 }
+
+pub fn event_handler<'a, I: Interface, Sf>(handler: Sf) -> EventHandler<'a, I, Connection<'a>, Sf>
+where
+    for<'rs> Sf: Fn(
+        I::Event<'static>,
+        &'rs mut Connection<'a>,
+        &'rs ObjectId<I>,
+    ) -> Pin<Box<dyn Future<Output = ()> + 'rs>>,
+{
+    EventHandler::new(handler)
+}
+
+//TODO: ergonomic async version
+// pub fn event_handler<'a, I: Interface, Af>(mut handler: Af) -> impl Handler<'a>
+// where
+//     for<'r> Af: AsyncFnMut(I::Event<'static>, &'r mut Connection<'a>, &'r ObjectId<I>),
+// {
+//     event_handler_inner(move |ev, conn, id| Box::pin(async move { handler(ev, conn, id).await }))
+// }
 
 pub struct WaylandPacket {
     pub header: MessageHeader,

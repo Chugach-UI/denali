@@ -17,18 +17,16 @@ use super::fixed::Fixed;
 /// For types that have an encoded size that can only be determined at runtime, implement only [`MessageSize`].
 pub trait CompileTimeMessageSize: MessageSize {
     /// The size of this type when encoded for the Wayland wire protocol, in bytes.
-    const SIZE: usize = size_of::<Self>();
+    const SIZE: usize;
 }
 
 /// The size of a message/type in bytes when encoded for the Wayland wire protocol.
 /// Types implementing this trait have a encoded size that can be determined at runtime.
 ///
 /// For types that have an encoded size that can be determined at compile time, implement both this and [`CompileTimeMessageSize`].
-pub trait MessageSize: Sized {
+pub trait MessageSize {
     /// Returns the size of this type when encoded for the Wayland wire protocol, in bytes.
-    fn size(&self) -> usize {
-        size_of::<Self>()
-    }
+    fn size(&self) -> usize;
 }
 
 /// Ensures that the provided data slice is at least as large as the size of the type `$t`.
@@ -65,8 +63,14 @@ macro_rules! impl_serde {
                 pub $field: $type
             ),*
         }
-        impl MessageSize for $name {}
-        impl CompileTimeMessageSize for $name {}
+        impl MessageSize for $name {
+            fn size(&self) -> usize {
+                size_of::<Self>()
+            }
+        }
+        impl CompileTimeMessageSize for $name {
+            const SIZE: usize = size_of::<Self>();
+        }
         impl Decode for $name {
             fn decode(data: &[u8]) -> Result<Self, SerdeError> {
                 ensure_size!(data, Self);
@@ -127,7 +131,7 @@ macro_rules! impl_serde {
 }
 
 /// A type that can be decoded from the Wayland wire protocol.
-pub trait Decode: MessageSize {
+pub trait Decode: MessageSize + Sized {
     /// Decodes an instance of this type from the provided byte slice.
     ///
     /// # Errors
@@ -167,8 +171,14 @@ impl_serde! {
 }
 impl_serde!(u32, i32);
 
-impl MessageSize for () {}
-impl CompileTimeMessageSize for () {}
+impl MessageSize for () {
+    fn size(&self) -> usize {
+        size_of::<Self>()
+    }
+}
+impl CompileTimeMessageSize for () {
+    const SIZE: usize = size_of::<Self>();
+}
 impl Decode for () {
     fn decode(_data: &[u8]) -> Result<Self, SerdeError> {
         Ok(())
@@ -180,8 +190,14 @@ impl Encode for () {
     }
 }
 
-impl MessageSize for Fixed {}
-impl CompileTimeMessageSize for Fixed {}
+impl MessageSize for Fixed {
+    fn size(&self) -> usize {
+        size_of::<Self>()
+    }
+}
+impl CompileTimeMessageSize for Fixed {
+    const SIZE: usize = size_of::<Self>();
+}
 impl Decode for Fixed {
     fn decode(data: &[u8]) -> Result<Self, SerdeError> {
         ensure_size!(data, Fixed);
