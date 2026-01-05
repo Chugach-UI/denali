@@ -6,39 +6,23 @@ use async_trait::async_trait;
 
 use crate::{
     Interface,
-    id::{AnyObjectId, ObjectId},
-    message::{IncomingMessage, MessageCoprod, MessageType},
+    id::{AnyObjectId, BorrowedObjectId, ObjectId},
+    message::{Event, IncomingMessage, MessageCoprod, MessageType, MessageTypeMarker, Request},
     prelude::Connection,
 };
 
 /// A trait for handling Wayland messages.
 #[async_trait(?Send)]
-pub trait Handler<'c>: crate::sealed::Sealed {
-    type Connection: Connection<'c>;
-    async fn handle_message(
-        &mut self,
-        opcode: u16,
-        message_type: MessageType,
-        data: &[u8],
-        id: AnyObjectId,
-        connection: &mut Self::Connection,
-    );
+pub trait Handler<M: MessageTypeMarker>: crate::sealed::Sealed {
+    async fn handle_message(&mut self, opcode: u16, data: &[u8], id: AnyObjectId);
 }
 
-pub struct EventHandler<'c, I: Interface, C: Connection<'c>, F>
-where
-    for<'r> F:
-        Fn(I::Event<'static>, &'r mut C, &'r ObjectId<I>) -> Pin<Box<dyn Future<Output = ()> + 'r>>,
-{
+pub struct EventHandler<I: Interface, F: AsyncFnMut(I::Event<'static>, BorrowedObjectId<I>) -> ()> {
     handler: F,
-    _marker: std::marker::PhantomData<(I, &'c (), fn(C))>,
+    _marker: std::marker::PhantomData<I>,
 }
 
-impl<'c, I: Interface, C: Connection<'c>, F> EventHandler<'c, I, C, F>
-where
-    for<'r> F:
-        Fn(I::Event<'static>, &'r mut C, &'r ObjectId<I>) -> Pin<Box<dyn Future<Output = ()> + 'r>>,
-{
+impl<I: Interface, F: AsyncFnMut(I::Event<'static>, BorrowedObjectId<I>) -> ()> EventHandler<I, F> {
     pub fn new(handler: F) -> Self {
         Self {
             handler,
@@ -46,32 +30,20 @@ where
         }
     }
 }
-impl<'c, I: Interface, C: Connection<'c>, F> crate::sealed::Sealed for EventHandler<'c, I, C, F> where
-    for<'r> F:
-        Fn(I::Event<'static>, &'r mut C, &'r ObjectId<I>) -> Pin<Box<dyn Future<Output = ()> + 'r>>
+impl<I: Interface, F: AsyncFnMut(I::Event<'static>, BorrowedObjectId<I>) -> ()>
+    crate::sealed::Sealed for EventHandler<I, F>
 {
 }
 
 #[async_trait(?Send)]
-impl<'c, I: Interface, C: Connection<'c>, F> Handler<'c> for EventHandler<'c, I, C, F>
-where
-    for<'r> F:
-        Fn(I::Event<'static>, &'r mut C, &'r ObjectId<I>) -> Pin<Box<dyn Future<Output = ()> + 'r>>,
+impl<I: Interface, F: AsyncFnMut(I::Event<'static>, BorrowedObjectId<I>) -> ()> Handler<Event>
+    for EventHandler<I, F>
 {
-    type Connection = C;
-
-    async fn handle_message(
-        &mut self,
-        opcode: u16,
-        message_type: MessageType,
-        data: &[u8],
-        id: AnyObjectId,
-        connection: &mut C,
-    ) {
+    async fn handle_message(&mut self, opcode: u16, data: &[u8], id: AnyObjectId) {
         let Ok(message) = MessageCoprod::<I::Event<'_>, I::Request<'_>>::try_decode(
             I::INTERFACE,
             opcode,
-            message_type,
+            MessageType::Event,
             data,
         ) else {
             return;
@@ -80,24 +52,31 @@ where
             return;
         };
 
-        let id = unsafe { ObjectId::new(id) };
+        let id = unsafe { BorrowedObjectId::new(ObjectId::new(id)) };
 
-        (self.handler)(event, connection, &id).await;
+        (self.handler)(event, id).await;
+    }
+}
+
+pub fn event_handler<I: Interface, F: AsyncFnMut(I::Event<'static>, BorrowedObjectId<I>) -> ()>(
+    handler: F,
+) -> EventHandler<I, F> {
+    EventHandler {
+        handler,
+        _marker: std::marker::PhantomData,
     }
 }
 
 pub struct RequestHandler<
-    'a,
     I: Interface,
-    C: Connection<'a>,
-    F: AsyncFnMut(I::Request<'_>, &mut C, &ObjectId<I>),
+    F: AsyncFnMut(I::Request<'static>, BorrowedObjectId<I>) -> (),
 > {
     handler: F,
-    _marker: std::marker::PhantomData<(I, fn(&'a C))>,
+    _marker: std::marker::PhantomData<I>,
 }
 
-impl<'a, I: Interface, C: Connection<'a>, F: AsyncFnMut(I::Request<'_>, &mut C, &ObjectId<I>)>
-    RequestHandler<'a, I, C, F>
+impl<I: Interface, F: AsyncFnMut(I::Request<'static>, BorrowedObjectId<I>) -> ()>
+    RequestHandler<I, F>
 {
     pub fn new(handler: F) -> Self {
         Self {
@@ -106,29 +85,20 @@ impl<'a, I: Interface, C: Connection<'a>, F: AsyncFnMut(I::Request<'_>, &mut C, 
         }
     }
 }
-impl<'a, I: Interface, C: Connection<'a>, F: AsyncFnMut(I::Request<'_>, &mut C, &ObjectId<I>)>
-    crate::sealed::Sealed for RequestHandler<'a, I, C, F>
+impl<I: Interface, F: AsyncFnMut(I::Request<'static>, BorrowedObjectId<I>) -> ()>
+    crate::sealed::Sealed for RequestHandler<I, F>
 {
 }
 
 #[async_trait(?Send)]
-impl<'a, I: Interface, C: Connection<'a>, F: AsyncFnMut(I::Request<'_>, &mut C, &ObjectId<I>)>
-    Handler<'a> for RequestHandler<'a, I, C, F>
+impl<I: Interface, F: AsyncFnMut(I::Request<'static>, BorrowedObjectId<I>) -> ()> Handler<Request>
+    for RequestHandler<I, F>
 {
-    type Connection = C;
-
-    async fn handle_message(
-        &mut self,
-        opcode: u16,
-        message_type: MessageType,
-        data: &[u8],
-        id: AnyObjectId,
-        connection: &mut Self::Connection,
-    ) {
+    async fn handle_message(&mut self, opcode: u16, data: &[u8], id: AnyObjectId) {
         let Ok(message) = MessageCoprod::<I::Event<'_>, I::Request<'_>>::try_decode(
             I::INTERFACE,
             opcode,
-            message_type,
+            MessageType::Request,
             data,
         ) else {
             return;
@@ -137,8 +107,8 @@ impl<'a, I: Interface, C: Connection<'a>, F: AsyncFnMut(I::Request<'_>, &mut C, 
             return;
         };
 
-        let id = unsafe { ObjectId::new(id) };
+        let id = unsafe { BorrowedObjectId::new(ObjectId::new(id)) };
 
-        (self.handler)(request, connection, &id).await;
+        (self.handler)(request, id).await;
     }
 }

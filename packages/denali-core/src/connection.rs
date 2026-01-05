@@ -33,6 +33,7 @@ impl ConnectionType {
 /// This trait provides methods for managing handlers, sending requests, and sending events.
 pub trait Connection<'h> {
     type Error;
+    type IncomingMessageType: MessageTypeMarker;
 
     /// Returns the type of the connection.
     fn connection_type(&self) -> ConnectionType;
@@ -50,24 +51,43 @@ pub trait Connection<'h> {
     ///
     /// On a client connection, the handler will be called when the object receives an event.
     /// On a server connection, the handler will be called when the object receives a request.
-    fn add_handler<I: Interface, H: Handler<'h, Connection = Self> + 'h>(
+    fn add_handler<I: Interface, H: Handler<Self::IncomingMessageType> + 'h>(
         &mut self,
         object: &ObjectId<I>,
         handler: H,
     );
 
-    async fn send_message<M: MessageTypeMarker, O: OutgoingMessage<M>>(
+    async fn send_message<
+        O: OutgoingMessage<<Self::IncomingMessageType as MessageTypeMarker>::Complement>,
+    >(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error>;
+}
 
-    async fn send_event<O: OutgoingMessage<Event>>(
+pub trait ClientConnection<'h>: Connection<'h> {
+    async fn send_request<O: OutgoingMessage<Request>>(
+        &mut self,
+        message: O,
+    ) -> Result<O::Response, Self::Error>;
+}
+impl<'h, T: Connection<'h, IncomingMessageType = Event>> ClientConnection<'h> for T {
+    async fn send_request<O: OutgoingMessage<Request>>(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error> {
         self.send_message(message).await
     }
-    async fn send_request<O: OutgoingMessage<Request>>(
+}
+
+pub trait ServerConnection<'h>: Connection<'h> {
+    async fn send_event<O: OutgoingMessage<Event>>(
+        &mut self,
+        message: O,
+    ) -> Result<O::Response, Self::Error>;
+}
+impl<'h, T: Connection<'h, IncomingMessageType = Request>> ServerConnection<'h> for T {
+    async fn send_event<O: OutgoingMessage<Event>>(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error> {

@@ -16,24 +16,35 @@ pub enum MessageType {
 pub trait MessageTypeMarker: sealed::Sealed {
     const EVENT: bool;
     const REQUEST: bool;
+    type Complement: MessageTypeMarker;
 }
 pub struct Event(());
 pub struct Request(());
 pub(crate) struct EventOrRequest(());
+pub(crate) struct NeitherEventNorRequest(());
 impl sealed::Sealed for Event {}
 impl sealed::Sealed for Request {}
 impl sealed::Sealed for EventOrRequest {}
+impl sealed::Sealed for NeitherEventNorRequest {}
 impl MessageTypeMarker for Event {
     const EVENT: bool = true;
     const REQUEST: bool = false;
+    type Complement = Request;
 }
 impl MessageTypeMarker for Request {
     const EVENT: bool = false;
     const REQUEST: bool = true;
+    type Complement = Event;
 }
 impl MessageTypeMarker for EventOrRequest {
     const EVENT: bool = true;
     const REQUEST: bool = true;
+    type Complement = NeitherEventNorRequest;
+}
+impl MessageTypeMarker for NeitherEventNorRequest {
+    const EVENT: bool = false;
+    const REQUEST: bool = false;
+    type Complement = EventOrRequest;
 }
 
 /// Represents a message (either request or event) incoming over the wayland wire.

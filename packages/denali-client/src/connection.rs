@@ -24,7 +24,7 @@ use denali_core::{
     connection::ConnectionType,
     handler::{EventHandler, Handler},
     id::{AnyObjectId, IdFactory, IdManager, ObjectId},
-    message::{MessageResponse, encode_message},
+    message::{Event, MessageResponse, Request, encode_message},
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
 };
 
@@ -35,7 +35,7 @@ pub struct Connection<'a> {
 
     id_manager: IdManager,
 
-    handlers: HashMap<RawObjectId, Option<Box<dyn Handler<'a, Connection = Self> + 'a>>>,
+    handlers: HashMap<RawObjectId, Box<dyn Handler<Event> + 'a>>,
 }
 
 impl Connection<'_> {
@@ -181,55 +181,35 @@ impl Connection<'_> {
                 continue;
             };
 
-            let mut handler = handler.take().unwrap();
-
             handler
-                .handle_message(
-                    packet.header.opcode,
-                    denali_core::message::MessageType::Event,
-                    &packet.body,
-                    unsafe { AnyObjectId::new(packet.header.object_id) },
-                    self,
-                )
+                .handle_message(packet.header.opcode, &packet.body, unsafe {
+                    AnyObjectId::new(packet.header.object_id)
+                })
                 .await;
-
-            self.handlers
-                .get_mut(&packet.header.object_id)
-                .unwrap()
-                .replace(handler);
         }
     }
 }
 
 impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
     type Error = ConnectionError;
+    type IncomingMessageType = Event;
 
     fn connection_type(&self) -> ConnectionType {
         ConnectionType::Client
     }
 
-    fn add_handler<I: denali_core::Interface, H: Handler<'a, Connection = Self> + 'a>(
+    fn add_handler<I: denali_core::Interface, H: Handler<Event> + 'a>(
         &mut self,
         object: &ObjectId<I>,
         handler: H,
     ) {
-        self.handlers.insert(object.get(), Some(Box::new(handler)));
+        self.handlers.insert(object.get(), Box::new(handler));
     }
 
-    async fn send_message<
-        M: denali_core::message::MessageTypeMarker,
-        O: denali_core::message::OutgoingMessage<M>,
-    >(
+    async fn send_message<O: denali_core::message::OutgoingMessage<Request>>(
         &mut self,
         message: O,
     ) -> Result<O::Response, ConnectionError> {
-        const {
-            assert!(
-                !M::EVENT,
-                "Client sided connections cannot send events over the wire. Make sure to only send requests through this connection."
-            );
-        }
-
         // Reserve space for the message in the encoding buffer
         let required_len = self.encoding_buf.len() + message.size() + MessageHeader::SIZE;
         let growth = required_len.saturating_sub(self.encoding_buf.capacity());
@@ -253,17 +233,6 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
 
         Ok(response)
     }
-}
-
-pub fn event_handler<'a, I: Interface, Sf>(handler: Sf) -> EventHandler<'a, I, Connection<'a>, Sf>
-where
-    for<'rs> Sf: Fn(
-        I::Event<'static>,
-        &'rs mut Connection<'a>,
-        &'rs ObjectId<I>,
-    ) -> Pin<Box<dyn Future<Output = ()> + 'rs>>,
-{
-    EventHandler::new(handler)
 }
 
 //TODO: ergonomic async version

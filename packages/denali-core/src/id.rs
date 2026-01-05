@@ -182,6 +182,27 @@ impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BorrowedObjectId<I: Interface> {
+    id: ObjectId<I>,
+}
+impl<I: Interface> BorrowedObjectId<I> {
+    pub(crate) const unsafe fn new(id: ObjectId<I>) -> Self {
+        Self { id }
+    }
+
+    pub fn as_ref(&self) -> &ObjectId<I> {
+        &self.id
+    }
+}
+impl<I: Interface> Deref for BorrowedObjectId<I> {
+    type Target = ObjectId<I>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IdManager {
     next: RawObjectId,
