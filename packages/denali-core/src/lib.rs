@@ -7,6 +7,7 @@ pub mod handler;
 pub mod id;
 pub mod message;
 pub mod wire;
+pub mod encoder;
 
 mod sealed {
     pub trait Sealed {}

@@ -298,6 +298,10 @@ impl<'a> IdFactory<'a> {
         Self(manager)
     }
 
+    pub const fn into_inner(self) -> &'a mut IdManager {
+        self.0
+    }
+
     /// Peeks at the next available id without allocating it.
     pub fn peek_next_id(&self) -> Result<RawObjectId, IdManagerError> {
         self.0.peek_next_id()
