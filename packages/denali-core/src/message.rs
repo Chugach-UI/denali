@@ -1,3 +1,5 @@
+//! Wayland message-related types and traits.
+
 use thiserror::Error;
 
 use crate::{
@@ -9,25 +11,30 @@ use crate::{
     },
 };
 
+/// Represents the direction of a message over the wire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MessageType {
+    /// An event message.
     Event,
+    /// A request message.
     Request,
 }
 
+/// Trait representing the direction of a message over the wire.
 pub trait MessageTypeMarker: sealed::Sealed {
+    /// Whether this message type is an event.
     const EVENT: bool;
+    /// Whether this message type is a request.
     const REQUEST: bool;
+    /// The opposite direction of this message type.
     type Complement: MessageTypeMarker;
 }
+/// Marker type for event messages.
 pub struct Event(());
+/// Marker type for request messages.
 pub struct Request(());
-pub(crate) struct EventOrRequest(());
-pub(crate) struct NeitherEventNorRequest(());
 impl sealed::Sealed for Event {}
 impl sealed::Sealed for Request {}
-impl sealed::Sealed for EventOrRequest {}
-impl sealed::Sealed for NeitherEventNorRequest {}
 impl MessageTypeMarker for Event {
     const EVENT: bool = true;
     const REQUEST: bool = false;
@@ -38,21 +45,15 @@ impl MessageTypeMarker for Request {
     const REQUEST: bool = true;
     type Complement = Event;
 }
-impl MessageTypeMarker for EventOrRequest {
-    const EVENT: bool = true;
-    const REQUEST: bool = true;
-    type Complement = NeitherEventNorRequest;
-}
-impl MessageTypeMarker for NeitherEventNorRequest {
-    const EVENT: bool = false;
-    const REQUEST: bool = false;
-    type Complement = EventOrRequest;
-}
 
+/// A raw (undecoded) message received over the wayland wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawWaylandMessage {
+    /// The object to receive the message.
     pub object_id: RawObjectId,
+    /// The opcode of the message.
     pub opcode: u16,
+    /// The data of the message.
     pub body: Vec<u8>,
 }
 
@@ -81,16 +82,21 @@ pub trait IncomingMessage<T: MessageTypeMarker> {
 
 /// Represents a message (either request or event) outgoing over the wayland wire.
 pub trait OutgoingMessage<T: MessageTypeMarker>: EncodeWithNewId {
+    /// The interface associated with this message.
     type Interface: Interface;
+    /// The opcode of the message.
     const OPCODE: u16;
 
     /// The type of response expected from this event/request.
     type Response: MessageResponse;
 
+    /// Returns the id of the object sending this message.
     fn sender(&self) -> &ObjectId<Self::Interface>;
 }
 
+/// A trait implemented by possible responses to a message.
 pub trait MessageResponse {
+    /// Create a new instance of this response with a provided [`IdFactory`].
     fn with_id_factory(id_factory: IdFactory<'_>) -> Self;
 }
 impl MessageResponse for () {
@@ -104,6 +110,7 @@ impl<I: Interface> MessageResponse for ObjectId<I> {
     }
 }
 
+/// A trait for message types that need to create/peek new IDs while encoding.
 pub trait EncodeWithNewId: MessageSize {
     /// Encodes this instance into the provided byte slice.
     ///
@@ -116,71 +123,17 @@ pub trait EncodeWithNewId: MessageSize {
     fn encode(&self, data: &mut [u8], id_factory: IdFactory<'_>) -> Result<usize, SerdeError>;
 }
 
+/// A hint used to allocate new IDs for a specific interface.
+///
+/// # Example
+///
+/// This hint is used in a `WlRegistryBindRequest` to type the returned object ID.
 pub struct NewIdHint<I: Interface>(std::marker::PhantomData<I>);
 impl<I: Interface> NewIdHint<I> {
+    /// Creates a new `NewIdHint` instance.
     #[must_use]
     pub const fn new() -> Self {
         Self(std::marker::PhantomData)
-    }
-}
-
-pub(crate) enum MessageCoprod<E, R> {
-    Event(E),
-    Request(R),
-}
-impl<E, R> MessageCoprod<E, R> {
-    pub const fn new_event(event: E) -> Self {
-        Self::Event(event)
-    }
-
-    pub const fn new_request(request: R) -> Self {
-        Self::Request(request)
-    }
-
-    pub fn into_event(self) -> Option<E> {
-        match self {
-            Self::Event(event) => Some(event),
-            Self::Request(_) => None,
-        }
-    }
-
-    pub fn into_request(self) -> Option<R> {
-        match self {
-            Self::Event(_) => None,
-            Self::Request(request) => Some(request),
-        }
-    }
-}
-
-impl<T, U> IncomingMessage<EventOrRequest> for MessageCoprod<T, U>
-where
-    T: IncomingMessage<Event>,
-    U: IncomingMessage<Request, Interface = T::Interface>,
-{
-    type Interface = T::Interface;
-
-    fn try_decode(
-        interface: &str,
-        opcode: u16,
-        message_type: MessageType,
-        data: &[u8],
-    ) -> Result<Self, DecodeMessageError>
-    where
-        Self: Sized,
-    {
-        let target_interface: &str = Self::Interface::INTERFACE;
-
-        if interface != target_interface {
-            return Err(DecodeMessageError::UnknownInterface(interface.to_string()));
-        }
-
-        let is_event = matches!(message_type, MessageType::Event);
-
-        if is_event {
-            T::try_decode(interface, opcode, message_type, data).map(Self::new_event)
-        } else {
-            U::try_decode(interface, opcode, message_type, data).map(Self::new_request)
-        }
     }
 }
 

@@ -13,6 +13,7 @@ mod sealed {
     pub trait Sealed {}
 }
 
+/// Prelude for Denali Wayland.
 pub mod prelude {
     pub use crate::Interface;
     pub use crate::connection::Connection;

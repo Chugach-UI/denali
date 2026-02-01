@@ -1,9 +1,9 @@
 use convert_case::Case;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 
 use crate::{
-    MessageType, build_ident,
+    build_ident,
     protocol_parser::{Arg, ArgType, Message},
 };
 

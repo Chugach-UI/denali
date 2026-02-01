@@ -1,9 +1,6 @@
 //! Connection types and traits.
 
-use crate::{
-    message::{Event, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request},
-    wire::serde::{MessageHeader, RawObjectId},
-};
+use crate::message::{Event, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request};
 
 /// Connection types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +26,7 @@ impl ConnectionType {
 /// A trait implemented by both client and server connections.
 ///
 /// This trait provides methods for managing handlers, sending requests, and sending events.
+#[allow(async_fn_in_trait)]
 pub trait Connection {
     /// The type of error that can occur when sending or receiving messages.
     type Error;
@@ -57,10 +55,12 @@ pub trait Connection {
         message: O,
     ) -> Result<O::Response, Self::Error>;
 
+    /// Receive the next message from the remote endpoint.
     async fn next_message(&mut self) -> Result<RawWaylandMessage, Self::Error>;
 }
 
 /// Extension trait for client-sided connections.
+#[allow(async_fn_in_trait)]
 pub trait ClientConnection: Connection {
     /// Send a request to the remote endpoint.
     async fn send_request<O: OutgoingMessage<Request>>(
@@ -78,6 +78,7 @@ impl<T: Connection<IncomingMessageType = Event>> ClientConnection for T {
 }
 
 /// Extension trait for server-sided connections.
+#[allow(async_fn_in_trait)]
 pub trait ServerConnection: Connection {
     /// Send an event to the remote endpoint.
     async fn send_event<O: OutgoingMessage<Event>>(

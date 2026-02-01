@@ -7,8 +7,6 @@
 
 use std::io::Cursor;
 
-use serde::CompileTimeMessageSize;
-
 pub mod fixed;
 pub mod serde;
 
@@ -150,9 +148,9 @@ mod tests {
                 .unwrap();
             traverser.write(&8i32).unwrap();
             traverser.write(&19u32).unwrap();
-            traverser.write::<Array>(&[4u8; 4].into()).unwrap();
+            traverser.write::<Array<'_>>(&[4u8; 4].into()).unwrap();
             traverser
-                .write::<super::serde::String>(&"test".into())
+                .write::<super::serde::String<'_>>(&"test".into())
                 .unwrap();
             traverser.set_position(0);
         });
@@ -167,11 +165,11 @@ mod tests {
         let mut traverser = MessageEncoder::new(&mut buffer);
 
         b.iter(|| {
-            let header: super::serde::MessageHeader = traverser.read().unwrap();
-            let value_i32: i32 = traverser.read().unwrap();
-            let value_u32: u32 = traverser.read().unwrap();
-            let array: Array = traverser.read().unwrap();
-            let string: super::serde::String = traverser.read().unwrap();
+            let _header: super::serde::MessageHeader = traverser.read().unwrap();
+            let _value_i32: i32 = traverser.read().unwrap();
+            let _value_u32: u32 = traverser.read().unwrap();
+            let _array: Array<'_> = traverser.read().unwrap();
+            let _string: super::serde::String<'_> = traverser.read().unwrap();
             traverser.set_position(0);
         });
     }
@@ -191,9 +189,9 @@ mod tests {
             .unwrap();
         traverser.write(&8i32).unwrap();
         traverser.write(&19u32).unwrap();
-        traverser.write::<Array>(&[4u8; 4].into()).unwrap();
+        traverser.write::<Array<'_>>(&[4u8; 4].into()).unwrap();
         traverser
-            .write::<super::serde::String>(&"test".into())
+            .write::<super::serde::String<'_>>(&"test".into())
             .unwrap();
 
         // test decoding
@@ -206,10 +204,10 @@ mod tests {
         assert_eq!(value_i32, 8);
         let value_u32: u32 = traverser.read().unwrap();
         assert_eq!(value_u32, 19);
-        let array: Array = traverser.read().unwrap();
+        let array: Array<'_> = traverser.read().unwrap();
         assert_eq!(array.data.len(), 4);
         assert_eq!(&*array.data, &[4u8; 4]);
-        let string: super::serde::String = traverser.read().unwrap();
+        let string: super::serde::String<'_> = traverser.read().unwrap();
         assert_eq!(string.data, "test");
     }
 }

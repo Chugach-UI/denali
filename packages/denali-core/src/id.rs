@@ -98,14 +98,17 @@ impl<'a> DynamicObjectId<'a> {
         self.2.borrow()
     }
 
+    /// Returns the version of the interface
     #[must_use]
     pub const fn version(&self) -> u32 {
         self.1
     }
 }
 
+/// Error that can occur when converting a `DynamicObjectId` to an `ObjectId`.
 #[derive(Error, Debug)]
 pub enum DynamicObjectIdError {
+    /// Interface name does not match
     #[error("Interface name does not match")]
     InvalidInterface,
 }
@@ -182,27 +185,9 @@ impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BorrowedObjectId<I: Interface> {
-    id: ObjectId<I>,
-}
-impl<I: Interface> BorrowedObjectId<I> {
-    pub(crate) const unsafe fn new(id: ObjectId<I>) -> Self {
-        Self { id }
-    }
-
-    pub fn as_ref(&self) -> &ObjectId<I> {
-        &self.id
-    }
-}
-impl<I: Interface> Deref for BorrowedObjectId<I> {
-    type Target = ObjectId<I>;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_ref()
-    }
-}
-
+/// A manager for allocating and deallocating `ObjectId`s.
+///
+/// Ensures that the allocated ids are unique and within the valid range.
 #[derive(Debug, Clone)]
 pub struct IdManager {
     next: RawObjectId,
@@ -210,6 +195,7 @@ pub struct IdManager {
 }
 
 impl IdManager {
+    /// Creates a new `IdManager`.
     #[must_use]
     pub const fn new() -> Self {
         Self {
@@ -277,10 +263,12 @@ impl IdManager {
         }
     }
 
+    /// Allocate a new untyped ID.
     pub unsafe fn alloc_any_id(&mut self) -> Result<AnyObjectId, IdManagerError> {
         self.alloc_id().map(|id| unsafe { AnyObjectId::new(id) })
     }
 
+    /// Allocate a new typed ID.
     pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
         self.alloc_id().map(|id| unsafe { ObjectId::from_raw(id) })
     }
@@ -294,6 +282,7 @@ impl Default for IdManager {
 /// A reference to a [`IdManager`] that only allows for ID allocation
 pub struct IdFactory<'a>(&'a mut IdManager);
 impl<'a> IdFactory<'a> {
+    /// Creates a new `IdFactory`.
     pub const fn new(manager: &'a mut IdManager) -> Self {
         Self(manager)
     }
@@ -312,16 +301,14 @@ impl<'a> IdFactory<'a> {
         self.0.alloc_id()
     }
 
+    /// Allocate a new untyped ID.
     pub unsafe fn alloc_any_id(&mut self) -> Result<AnyObjectId, IdManagerError> {
         unsafe { self.0.alloc_any_id() }
     }
 
+    /// Allocate a new typed ID.
     pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
         unsafe { self.0.alloc_typed_id() }
-    }
-
-    pub(crate) fn into_inner(self) -> &'a mut IdManager {
-        self.0
     }
 }
 
