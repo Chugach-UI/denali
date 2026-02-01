@@ -1,7 +1,6 @@
 //! A module for establishing and managing a connection to a Wayland server.
 
 use std::{
-    collections::HashMap,
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
     os::{
@@ -9,7 +8,6 @@ use std::{
         unix::net::UnixStream,
     },
     path::PathBuf,
-    pin::Pin,
 };
 
 use denali_protocol::wayland::wl_display::WlDisplay;
@@ -20,25 +18,21 @@ use tokio_seqpacket::{
 };
 
 use denali_core::{
-    Interface,
     connection::ConnectionType,
-    handler::{EventHandler, Handler},
-    id::{AnyObjectId, IdFactory, IdManager, ObjectId},
-    message::{Event, MessageResponse, Request, encode_message},
-    wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
+    id::{IdFactory, IdManager, ObjectId},
+    message::{Event, MessageResponse, RawWaylandMessage, Request, encode_message},
+    wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, SerdeError},
 };
 
 /// A basic, single threaded, implementation of a client connection to a Wayland server.
-pub struct Connection<'a> {
+pub struct Connection {
     socket: UnixSeqpacket,
     encoding_buf: Vec<u8>,
 
     id_manager: IdManager,
-
-    handlers: HashMap<RawObjectId, Box<dyn Handler<Event> + 'a>>,
 }
 
-impl Connection<'_> {
+impl Connection {
     /// Creates a new Connection to a Wayland server.
     ///
     /// # Errors
@@ -77,7 +71,6 @@ impl Connection<'_> {
             Self {
                 socket,
                 encoding_buf: Vec::new(),
-                handlers: HashMap::new(),
                 id_manager,
             },
             display_id,
@@ -157,53 +150,14 @@ impl Connection<'_> {
 
         Ok(bytes_read)
     }
-
-    /// Waits for the next wayland packet
-    async fn next_packet(&mut self) -> Result<WaylandPacket, ConnectionError> {
-        let head = self.recv_header().await?;
-
-        let size = head.size as usize - 8;
-        let mut buf = vec![0u8; size];
-
-        self.recv_with_ancillary(&mut buf, &mut []).await.unwrap();
-
-        Ok(WaylandPacket {
-            header: head,
-            body: buf,
-        })
-    }
-
-    pub async fn handle_events(&mut self) -> Result<(), ConnectionError> {
-        loop {
-            let packet = self.next_packet().await?;
-
-            let Some(handler) = self.handlers.get_mut(&packet.header.object_id) else {
-                continue;
-            };
-
-            handler
-                .handle_message(packet.header.opcode, &packet.body, unsafe {
-                    AnyObjectId::new(packet.header.object_id)
-                })
-                .await;
-        }
-    }
 }
 
-impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
+impl denali_core::connection::Connection for Connection {
     type Error = ConnectionError;
     type IncomingMessageType = Event;
 
     fn connection_type(&self) -> ConnectionType {
         ConnectionType::Client
-    }
-
-    fn add_handler<I: denali_core::Interface, H: Handler<Event> + 'a>(
-        &mut self,
-        object: &ObjectId<I>,
-        handler: H,
-    ) {
-        self.handlers.insert(object.get(), Box::new(handler));
     }
 
     async fn send_message<O: denali_core::message::OutgoingMessage<Request>>(
@@ -233,19 +187,23 @@ impl<'a> denali_core::connection::Connection<'a> for Connection<'a> {
 
         Ok(response)
     }
-}
 
-//TODO: ergonomic async version
-// pub fn event_handler<'a, I: Interface, Af>(mut handler: Af) -> impl Handler<'a>
-// where
-//     for<'r> Af: AsyncFnMut(I::Event<'static>, &'r mut Connection<'a>, &'r ObjectId<I>),
-// {
-//     event_handler_inner(move |ev, conn, id| Box::pin(async move { handler(ev, conn, id).await }))
-// }
+    async fn next_message(
+        &mut self,
+    ) -> Result<denali_core::message::RawWaylandMessage, Self::Error> {
+        let head = self.recv_header().await?;
 
-pub struct WaylandPacket {
-    pub header: MessageHeader,
-    pub body: Vec<u8>,
+        let size = head.size as usize - 8;
+        let mut buf = vec![0u8; size];
+
+        self.recv_with_ancillary(&mut buf, &mut []).await.unwrap();
+
+        Ok(RawWaylandMessage {
+            body: buf,
+            object_id: head.object_id,
+            opcode: head.opcode,
+        })
+    }
 }
 
 /// Errors that can occur when establishing a connection to a Wayland server.

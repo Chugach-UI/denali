@@ -3,7 +3,8 @@
 #![cfg_attr(test, feature(test))]
 
 pub mod connection;
-pub mod handler;
+// pub mod encoder;
+// pub mod handler;
 pub mod id;
 pub mod message;
 pub mod wire;
@@ -29,7 +30,7 @@ pub mod prelude {
 #[doc(hidden)]
 pub use bitflags as __bitflags;
 
-use crate::message::{Event, IncomingMessage, Request};
+use message::{DecodeMessageError, Event, IncomingMessage, MessageType, Request};
 
 /// A Wayland interface.
 pub trait Interface {
@@ -43,3 +44,20 @@ pub trait Interface {
     /// The request type for this interface.
     type Request<'a>: IncomingMessage<Request, Interface = Self>;
 }
+
+/// Extension methods for interfaces.
+pub trait InterfaceExt: Interface {
+    /// Attempts to decode an incoming event message for this interface.
+    fn try_decode_event(opcode: u16, data: &[u8]) -> Result<Self::Event<'_>, DecodeMessageError> {
+        Self::Event::try_decode(Self::INTERFACE, opcode, MessageType::Event, data)
+    }
+
+    /// Attempts to decode an incoming request message for this interface.
+    fn try_decode_request(
+        opcode: u16,
+        data: &[u8],
+    ) -> Result<Self::Request<'_>, DecodeMessageError> {
+        Self::Request::try_decode(Self::INTERFACE, opcode, MessageType::Request, data)
+    }
+}
+impl<I: Interface> InterfaceExt for I {}

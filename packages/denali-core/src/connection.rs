@@ -1,10 +1,8 @@
 //! Connection types and traits.
 
 use crate::{
-    Interface,
-    handler::Handler,
-    id::ObjectId,
-    message::{Event, MessageTypeMarker, OutgoingMessage, Request},
+    message::{Event, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request},
+    wire::serde::{MessageHeader, RawObjectId},
 };
 
 /// Connection types.
@@ -31,8 +29,12 @@ impl ConnectionType {
 /// A trait implemented by both client and server connections.
 ///
 /// This trait provides methods for managing handlers, sending requests, and sending events.
-pub trait Connection<'h> {
+pub trait Connection {
+    /// The type of error that can occur when sending or receiving messages.
     type Error;
+    /// The type of incoming message.
+    /// For client connections, this will be [`Event`](crate::message::Event).
+    /// For server connections, this will be [`Request`](crate::message::Request).
     type IncomingMessageType: MessageTypeMarker;
 
     /// Returns the type of the connection.
@@ -47,31 +49,26 @@ pub trait Connection<'h> {
         self.connection_type().is_server()
     }
 
-    /// Add a handler to an object.
-    ///
-    /// On a client connection, the handler will be called when the object receives an event.
-    /// On a server connection, the handler will be called when the object receives a request.
-    fn add_handler<I: Interface, H: Handler<Self::IncomingMessageType> + 'h>(
-        &mut self,
-        object: &ObjectId<I>,
-        handler: H,
-    );
-
+    /// Send a message to the remote endpoint.
     async fn send_message<
         O: OutgoingMessage<<Self::IncomingMessageType as MessageTypeMarker>::Complement>,
     >(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error>;
+
+    async fn next_message(&mut self) -> Result<RawWaylandMessage, Self::Error>;
 }
 
-pub trait ClientConnection<'h>: Connection<'h> {
+/// Extension trait for client-sided connections.
+pub trait ClientConnection: Connection {
+    /// Send a request to the remote endpoint.
     async fn send_request<O: OutgoingMessage<Request>>(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error>;
 }
-impl<'h, T: Connection<'h, IncomingMessageType = Event>> ClientConnection<'h> for T {
+impl<T: Connection<IncomingMessageType = Event>> ClientConnection for T {
     async fn send_request<O: OutgoingMessage<Request>>(
         &mut self,
         message: O,
@@ -80,13 +77,15 @@ impl<'h, T: Connection<'h, IncomingMessageType = Event>> ClientConnection<'h> fo
     }
 }
 
-pub trait ServerConnection<'h>: Connection<'h> {
+/// Extension trait for server-sided connections.
+pub trait ServerConnection: Connection {
+    /// Send an event to the remote endpoint.
     async fn send_event<O: OutgoingMessage<Event>>(
         &mut self,
         message: O,
     ) -> Result<O::Response, Self::Error>;
 }
-impl<'h, T: Connection<'h, IncomingMessageType = Request>> ServerConnection<'h> for T {
+impl<T: Connection<IncomingMessageType = Request>> ServerConnection for T {
     async fn send_event<O: OutgoingMessage<Event>>(
         &mut self,
         message: O,

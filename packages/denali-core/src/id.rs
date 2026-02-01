@@ -319,6 +319,10 @@ impl<'a> IdFactory<'a> {
     pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
         unsafe { self.0.alloc_typed_id() }
     }
+
+    pub(crate) fn into_inner(self) -> &'a mut IdManager {
+        self.0
+    }
 }
 
 /// An error that may occur when allocating a new client ID.

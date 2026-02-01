@@ -4,7 +4,9 @@ use crate::{
     Interface,
     id::{IdFactory, ObjectId},
     sealed,
-    wire::serde::{CompileTimeMessageSize, Encode, MessageHeader, MessageSize, SerdeError},
+    wire::serde::{
+        CompileTimeMessageSize, Encode, MessageHeader, MessageSize, RawObjectId, SerdeError,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,8 +49,16 @@ impl MessageTypeMarker for NeitherEventNorRequest {
     type Complement = EventOrRequest;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawWaylandMessage {
+    pub object_id: RawObjectId,
+    pub opcode: u16,
+    pub body: Vec<u8>,
+}
+
 /// Represents a message (either request or event) incoming over the wayland wire.
 pub trait IncomingMessage<T: MessageTypeMarker> {
+    /// The type of interface associated with this message.
     type Interface: Interface;
 
     /// Attempt to decode a message from the given interface name, opcode, and data.
