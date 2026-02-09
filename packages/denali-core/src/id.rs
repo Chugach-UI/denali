@@ -128,7 +128,7 @@ impl<'a, I: Interface> TryFrom<DynamicObjectId<'a>> for ObjectId<I> {
 /// An owned object ID with a compile-time-known interface.
 ///
 /// See [`DynamicObjectId`] for an owned object ID with a dynamic interface.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectId<I: Interface> {
     id: AnyObjectId,
     _interface: std::marker::PhantomData<I>,
@@ -182,6 +182,17 @@ impl<I: Interface> Deref for ObjectId<I> {
 impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     fn from(val: ObjectId<I>) -> Self {
         val.get()
+    }
+}
+
+impl<T: Interface> std::fmt::Debug for ObjectId<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(&format!(
+            "ObjectId<{}>",
+            std::any::type_name::<T>().rsplit("::").next().unwrap()
+        ))
+        .field(&self.id.get())
+        .finish()
     }
 }
 

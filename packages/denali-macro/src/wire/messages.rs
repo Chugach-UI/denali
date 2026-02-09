@@ -17,7 +17,7 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
         ArgType::GenericNewId => quote! {
             denali_core::wire::serde::DynamicallyTypedNewId {
                 interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                version: I::MAX_VERSION,
+                version: 1,
                 id: 0
             }
         },
@@ -64,7 +64,7 @@ pub fn build_message_encode_impl(
                     unsafe {
                         denali_core::wire::serde::DynamicallyTypedNewId {
                             interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                            version: I::MAX_VERSION,
+                            version: 1,
                             id: id_factory.peek_next_id().unwrap()
                         }
                     }
@@ -78,6 +78,13 @@ pub fn build_message_encode_impl(
             _ => arg_to_serde_type(arg),
         })
         .collect::<Vec<_>>();
+
+    let fd_writes = message.fd_args.iter().enumerate().map(|(index, arg)| {
+        let name = build_ident(&arg.name, Case::Snake);
+        quote! {
+            fds[#index] = std::os::fd::AsRawFd::as_raw_fd(&self.#name);
+        }
+    });
 
     quote! {
         impl #bound_generics denali_core::wire::serde::MessageSize for #message_ident #generics {
@@ -93,7 +100,9 @@ pub fn build_message_encode_impl(
         }
 
         impl #bound_generics denali_core::message::EncodeWithNewId for #message_ident #generics {
-            fn encode(&self, data: &mut [u8], mut id_factory: denali_core::id::IdFactory<'_>) -> Result<usize, denali_core::wire::serde::SerdeError> {
+            fn encode(&self, data: &mut [u8], mut id_factory: denali_core::id::IdFactory<'_>, fds: &mut [std::os::fd::RawFd]) -> Result<usize, denali_core::wire::serde::SerdeError> {
+                #(#fd_writes)*
+
                 let mut encoder = denali_core::wire::MessageEncoder::new(data);
 
                 #(
@@ -156,18 +165,31 @@ fn read_into_arg_var(arg: &Arg) -> TokenStream {
 
 pub fn build_message_decode_body(message: &Message) -> TokenStream {
     let definitions = message.args.iter().map(read_into_arg_var);
+    let fd_definitions = message.fd_args.iter().enumerate().map(|(index, arg)| {
+        let fd_name = build_ident(&arg.name, Case::Snake);
+        quote! {
+            let raw = fds[#index];
+            let #fd_name = unsafe { std::os::fd::FromRawFd::from_raw_fd(raw) };
+        }
+    });
     let message_ident = build_ident(&message.name, Case::Pascal);
 
     let arg_names = message
         .args
         .iter()
         .map(|arg| build_ident(&arg.name, Case::Snake));
+    let fd_names = message
+        .fd_args
+        .iter()
+        .map(|arg| build_ident(&arg.name, Case::Snake));
 
     quote! {
         #(#definitions)*
+        #(#fd_definitions)*
 
         Self::#message_ident {
-            #(#arg_names),*
+            #(#arg_names,)*
+            #(#fd_names),*
         }
     }
 }

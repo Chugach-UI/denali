@@ -4,7 +4,6 @@ use std::{
 };
 
 use thiserror::Error;
-use tokio_seqpacket::UnixSeqpacketListener;
 
 pub struct Socket {
     listener: UnixSeqpacketListener,

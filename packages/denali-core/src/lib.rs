@@ -25,6 +25,8 @@ pub mod prelude {
 // pub mod proxy;
 // pub mod store;
 
+use std::os::fd::RawFd;
+
 // Re-export bitflags for use by denali-macro
 // This avoids users of denali-macro from needing to depend on bitflags directly,
 // instead they are only required to depend on denali-utils.
@@ -49,16 +51,21 @@ pub trait Interface {
 /// Extension methods for interfaces.
 pub trait InterfaceExt: Interface {
     /// Attempts to decode an incoming event message for this interface.
-    fn try_decode_event(opcode: u16, data: &[u8]) -> Result<Self::Event<'_>, DecodeMessageError> {
-        Self::Event::try_decode(Self::INTERFACE, opcode, MessageType::Event, data)
+    fn try_decode_event<'a>(
+        opcode: u16,
+        data: &'a [u8],
+        fds: &[RawFd],
+    ) -> Result<Self::Event<'a>, DecodeMessageError> {
+        Self::Event::try_decode(Self::INTERFACE, opcode, MessageType::Event, data, fds)
     }
 
     /// Attempts to decode an incoming request message for this interface.
-    fn try_decode_request(
+    fn try_decode_request<'a>(
         opcode: u16,
-        data: &[u8],
-    ) -> Result<Self::Request<'_>, DecodeMessageError> {
-        Self::Request::try_decode(Self::INTERFACE, opcode, MessageType::Request, data)
+        data: &'a [u8],
+        fds: &[RawFd],
+    ) -> Result<Self::Request<'a>, DecodeMessageError> {
+        Self::Request::try_decode(Self::INTERFACE, opcode, MessageType::Request, data, fds)
     }
 }
 impl<I: Interface> InterfaceExt for I {}

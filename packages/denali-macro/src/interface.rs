@@ -50,6 +50,11 @@ fn build_message_fields(
         quote! {}
     };
 
+    let fd_fields = message.fd_args.iter().map(|fd_arg| {
+        let field_name = build_ident(&fd_arg.name, Case::Snake);
+        quote! { #field_name: std::os::fd::OwnedFd }
+    });
+
     let fields = message
         .args
         .iter()
@@ -80,6 +85,7 @@ fn build_message_fields(
         quote! {
             {
                 #sender_field
+                #(#vis #fd_fields,)*
                 #(#vis #fields),*
             }
         },
@@ -161,6 +167,15 @@ fn build_incoming_message_enums(
         }
     });
 
+    let fd_count_arms = messages.iter().map(|msg| {
+        let opcode = msg.opcode as u16;
+        let count = msg.fd_args.len();
+
+        quote! {
+            #opcode => #count
+        }
+    });
+
     quote! {
         pub enum #incoming_enum_name #lifetime {
             #(#variants),*
@@ -168,11 +183,20 @@ fn build_incoming_message_enums(
 
         impl #lifetime IncomingMessage<#message_type_marker> for #incoming_enum_name #lifetime {
             type Interface = #interface_name;
+
+            fn fd_count(opcode: u16) -> usize {
+                match opcode {
+                    #(#fd_count_arms,)*
+                    _ => 0
+                }
+            }
+
             fn try_decode(
                 interface: &str,
                 opcode: u16,
                 message_type: denali_core::message::MessageType,
                 data: &[u8],
+                fds: &[std::os::fd::RawFd],
             ) -> Result<Self, denali_core::message::DecodeMessageError> {
                 if message_type != #message_type_enum {
                     todo!()
@@ -255,12 +279,15 @@ fn build_outgoing_message_structs(
 
         let encode_impl = build_message_encode_impl(msg, &name, &bound_generics, &generics);
 
+        let fd_count = msg.fd_args.len();
+
         quote! {
             pub struct #name #bound_generics #fields
 
             impl #bound_generics OutgoingMessage<#message_type_marker> for #name #generics {
                 type Interface = #interface_name;
                 const OPCODE: u16 = #opcode;
+                const FD_COUNT: usize = #fd_count;
 
                 /// The type of response expected from this event/request.
                 type Response = #response;
@@ -307,6 +334,7 @@ fn build_interface(
 
     quote! {
         #documentation
+        #[derive(Debug)]
         pub struct #name(());
 
         impl Interface for #name {

@@ -1,35 +1,190 @@
 //! A module for establishing and managing a connection to a Wayland server.
 
 use std::{
+    collections::VecDeque,
     env,
     io::{ErrorKind, IoSlice, IoSliceMut},
-    os::{
-        fd::{BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
-        unix::net::UnixStream,
-    },
+    os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd},
     path::PathBuf,
 };
 
 use denali_protocol::wayland::wl_display::WlDisplay;
+use nix::{
+    cmsg_space,
+    sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg},
+};
 use thiserror::Error;
-use tokio_seqpacket::{
-    UnixSeqpacket,
-    ancillary::{AncillaryMessageWriter, OwnedAncillaryMessage},
+use tokio::{
+    io::{AsyncWriteExt, Interest},
+    net::UnixStream,
 };
 
 use denali_core::{
+    Interface,
     connection::ConnectionType,
     id::{IdFactory, IdManager, ObjectId},
-    message::{Event, MessageResponse, RawWaylandMessage, Request, encode_message},
+    message::{DecodeMessageError, Event, MessageResponse, Request, encode_message},
+    prelude::IncomingMessage,
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, SerdeError},
 };
 
+fn peek_front_bytes<T: Copy>(queue: &VecDeque<T>, dest: &mut [T]) -> usize {
+    let (front, back) = queue.as_slices();
+    let front_len = front.len().min(dest.len());
+    let back_len = dest.len().saturating_sub(front.len());
+
+    dest[..front_len].copy_from_slice(&front[..front_len]);
+    dest[front_len..][..back_len].copy_from_slice(&back[..back_len]);
+
+    front_len + back_len
+}
+
+struct WaylandSocket {
+    socket: UnixStream,
+
+    message_buffer: VecDeque<u8>,
+    fd_queue: VecDeque<RawFd>,
+
+    cmsg_buffer: Vec<u8>,
+
+    // Effectively a numeric id for the current header
+    header_counter: u32,
+}
+impl WaylandSocket {
+    pub fn new(socket: UnixStream) -> Self {
+        Self {
+            socket,
+            message_buffer: VecDeque::with_capacity(1024),
+            fd_queue: VecDeque::with_capacity(10),
+            cmsg_buffer: cmsg_space!([RawFd; 10]),
+            header_counter: 0,
+        }
+    }
+
+    /// Reads data from the socket and stores it in the internal buffer to be decoded later.
+    /// Returns the number of bytes read and the number of file descriptors received.
+    pub async fn read_with_ancillary_data(&mut self) -> std::io::Result<(usize, usize)> {
+        self.socket.ready(Interest::READABLE).await?;
+
+        let mut temp_buf = [0; 1024];
+        let mut iov = [IoSliceMut::new(&mut temp_buf)];
+
+        let result = self.socket.try_io(Interest::READABLE, || {
+            let fd = self.socket.as_raw_fd();
+
+            match recvmsg::<()>(fd, &mut iov, Some(&mut self.cmsg_buffer), MsgFlags::empty()) {
+                Ok(msg) => {
+                    let mut fds_received = 0;
+                    msg.cmsgs()?.into_iter().for_each(|cmsg| {
+                        if let ControlMessageOwned::ScmRights(received_fds) = cmsg {
+                            fds_received += received_fds.len();
+                            self.fd_queue.extend(received_fds.into_iter());
+                        }
+                    });
+
+                    Ok((msg.bytes, fds_received))
+                }
+                Err(e) => Err(std::io::Error::from(e)),
+            }
+        })?;
+
+        self.message_buffer.extend(&temp_buf[..result.0]);
+
+        Ok(result)
+    }
+
+    pub async fn send_with_ancillary_data(
+        &mut self,
+        data: &[u8],
+        fds: &[RawFd],
+    ) -> std::io::Result<usize> {
+        self.socket.ready(Interest::WRITABLE).await?;
+
+        let iov = [IoSlice::new(data)];
+
+        let result = self.socket.try_io(Interest::WRITABLE, || {
+            let socket_fd = self.socket.as_raw_fd();
+
+            let cmsg = if !fds.is_empty() {
+                vec![ControlMessage::ScmRights(fds)]
+            } else {
+                vec![]
+            };
+
+            match sendmsg::<()>(socket_fd, &iov, &cmsg, MsgFlags::empty(), None) {
+                Ok(bytes_sent) => Ok(bytes_sent),
+                Err(e) => Err(std::io::Error::from(e)),
+            }
+        })?;
+
+        Ok(result)
+    }
+
+    pub async fn read_at_least(&mut self, bytes: usize, fds: usize) -> Result<(), std::io::Error> {
+        while self.message_buffer.len() < bytes || self.fd_queue.len() < fds {
+            match self.read_with_ancillary_data().await {
+                Ok(_) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn peek_header(&mut self) -> Result<MessageHeader, ConnectionError> {
+        let mut data = [0u8; MessageHeader::SIZE];
+
+        self.read_at_least(MessageHeader::SIZE, 0).await?;
+        peek_front_bytes(&self.message_buffer, &mut data);
+
+        MessageHeader::decode(&data).map_err(Into::into)
+    }
+
+    pub async fn flush_next_message(&mut self) -> Result<(), ConnectionError> {
+        let header = self.peek_header().await?;
+        self.read_at_least(header.size as _, 0).await?;
+        self.message_buffer.drain(..header.size as usize);
+        self.header_counter += 1;
+
+        Ok(())
+    }
+
+    pub async fn next_message<M: IncomingMessage<Event>>(&mut self) -> Result<M, ConnectionError> {
+        let header = self.peek_header().await?;
+        self.read_at_least(header.size as _, M::fd_count(header.opcode))
+            .await?;
+
+        self.message_buffer.make_contiguous();
+
+        //TODO: Remove arbitrary limit of 10 fds to a message (this reasonably should never be exceeded, but it's still gross)
+        let fd_storage = [0; 10];
+        let fds = &fd_storage[..M::fd_count(header.opcode)];
+
+        let (data, _) = self.message_buffer.as_slices();
+        let message = M::try_decode(
+            M::Interface::INTERFACE,
+            header.opcode,
+            denali_core::message::MessageType::Event,
+            &data[MessageHeader::SIZE..],
+            &fds,
+        )?;
+
+        self.message_buffer.drain(..header.size as usize);
+
+        self.header_counter += 1;
+
+        Ok(message)
+    }
+}
+
 /// A basic, single threaded, implementation of a client connection to a Wayland server.
 pub struct Connection {
-    socket: UnixSeqpacket,
+    socket: WaylandSocket,
     encoding_buf: Vec<u8>,
 
     id_manager: IdManager,
+
+    last_peeked_header: Option<u32>,
 }
 
 impl Connection {
@@ -38,12 +193,15 @@ impl Connection {
     /// # Errors
     ///
     /// This function will return an error if the XDG runtime directory cannot be located (`XDG_RUNTIME_DIR` environment variable is not set)
-    pub fn new() -> Result<(Self, ObjectId<WlDisplay>), ConnectionError> {
+    pub async fn new() -> Result<(Self, ObjectId<WlDisplay>), ConnectionError> {
         let mut id_manager = IdManager::new();
 
-        let socket_fd = {
+        let socket = {
             if let Ok(socket) = env::var("WAYLAND_SOCKET") {
-                unsafe { OwnedFd::from_raw_fd(socket.parse().unwrap()) }
+                let stream =
+                    unsafe { std::os::unix::net::UnixStream::from_raw_fd(socket.parse().unwrap()) };
+                stream.set_nonblocking(true).unwrap();
+                UnixStream::from_std(stream)?
             } else {
                 let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".into());
                 let mut wayland_display = PathBuf::from(wayland_display);
@@ -53,17 +211,10 @@ impl Connection {
                     let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
                     wayland_display = xdg_runtime_dir.join(wayland_display);
                 }
-                unsafe {
-                    OwnedFd::from_raw_fd(
-                        UnixStream::connect(wayland_display)
-                            .map_err(ConnectionError::ConnectError)?
-                            .into_raw_fd(),
-                    )
-                }
+                UnixStream::connect(wayland_display).await?
             }
         };
-
-        let socket = UnixSeqpacket::try_from(socket_fd).map_err(ConnectionError::ConnectError)?;
+        let socket = WaylandSocket::new(socket);
 
         let display_id = unsafe { id_manager.alloc_typed_id().unwrap() };
 
@@ -72,83 +223,10 @@ impl Connection {
                 socket,
                 encoding_buf: Vec::new(),
                 id_manager,
+                last_peeked_header: None,
             },
             display_id,
         ))
-    }
-
-    /// Sends data along with file descriptors to the Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if sending the message fails.
-    /// See [UnixSeqpacket::send_vectored_with_ancillary] for more details.
-    pub async fn send_with_ancillary(
-        &self,
-        buf: &[u8],
-        fds: &[RawFd],
-    ) -> Result<(), ConnectionError> {
-        let buffer = IoSlice::new(buf);
-        let mut ancillary_buffer = [0; 128];
-        let mut ancillary = AncillaryMessageWriter::new(&mut ancillary_buffer[..]);
-        let fds = fds
-            .iter()
-            .map(|fd| unsafe { BorrowedFd::borrow_raw(*fd) })
-            .collect::<Vec<_>>();
-
-        ancillary.add_fds(&fds).unwrap(); //TODO
-
-        while let Err(err) = self
-            .socket
-            .send_vectored_with_ancillary(&[buffer], &mut ancillary)
-            .await
-        {
-            match err.kind() {
-                ErrorKind::Interrupted => {}
-                _ => return Err(ConnectionError::SendError(err)),
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn recv_header(&mut self) -> Result<MessageHeader, ConnectionError> {
-        let mut header = [0; 8];
-        self.socket
-            .recv(&mut header)
-            .await
-            .map_err(ConnectionError::RecvError)?;
-        MessageHeader::decode(&header).map_err(ConnectionError::SerdeError)
-    }
-
-    /// Receives data along with file descriptors from the Wayland server.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if receiving the message fails.
-    /// See [UnixSeqpacket::recv_vectored_with_ancillary] for more details.
-    async fn recv_with_ancillary(
-        &self,
-        buf: &mut [u8],
-        fds: &mut [OwnedFd],
-    ) -> Result<usize, ConnectionError> {
-        let buffer = IoSliceMut::new(buf);
-        let mut ancillary_buffer = [0; 128];
-        let (bytes_read, ancillary_reader) = self
-            .socket
-            .recv_vectored_with_ancillary(&mut [buffer], &mut ancillary_buffer[..])
-            .await
-            .unwrap();
-
-        for res in ancillary_reader.into_messages() {
-            if let OwnedAncillaryMessage::FileDescriptors(received_fds) = res {
-                for (dst, src) in fds.iter_mut().zip(received_fds) {
-                    *dst = src;
-                }
-            }
-        }
-
-        Ok(bytes_read)
     }
 }
 
@@ -170,6 +248,10 @@ impl denali_core::connection::Connection for Connection {
         self.encoding_buf
             .resize(self.encoding_buf.len() + growth, 0);
 
+        //TODO: Remove arbitrary limit
+        let mut fd_storage = [0; 10];
+        let fds = &mut fd_storage[..O::FD_COUNT];
+
         // Encode the message
         let len = encode_message(
             &message,
@@ -177,10 +259,13 @@ impl denali_core::connection::Connection for Connection {
             O::OPCODE,
             &mut self.encoding_buf,
             IdFactory::new(&mut self.id_manager),
+            fds,
         )?;
 
-        self.send_with_ancillary(&self.encoding_buf[..len], &[])
+        self.socket
+            .send_with_ancillary_data(&self.encoding_buf[..len], &fds)
             .await?;
+        self.socket.socket.flush().await?;
 
         let response =
             <O::Response as MessageResponse>::with_id_factory(IdFactory::new(&mut self.id_manager));
@@ -188,21 +273,33 @@ impl denali_core::connection::Connection for Connection {
         Ok(response)
     }
 
-    async fn next_message(
+    async fn next_header(&mut self) -> Result<MessageHeader, Self::Error> {
+        let header = self.socket.peek_header().await?;
+
+        let Some(last_header) = self.last_peeked_header else {
+            self.last_peeked_header = Some(self.socket.header_counter);
+            return Ok(header);
+        };
+
+        // Check if we are peeking the same header again
+        if last_header == self.socket.header_counter {
+            self.socket.flush_next_message().await?;
+            self.last_peeked_header = None;
+            return self.socket.peek_header().await;
+        } else {
+            self.last_peeked_header = Some(self.socket.header_counter);
+        }
+
+        Ok(header)
+    }
+    async fn decode_message<M: IncomingMessage<Self::IncomingMessageType>>(
         &mut self,
-    ) -> Result<denali_core::message::RawWaylandMessage, Self::Error> {
-        let head = self.recv_header().await?;
+    ) -> Result<M, Self::Error> {
+        let message = self.socket.next_message::<M>().await?;
 
-        let size = head.size as usize - 8;
-        let mut buf = vec![0u8; size];
+        self.last_peeked_header = None;
 
-        self.recv_with_ancillary(&mut buf, &mut []).await.unwrap();
-
-        Ok(RawWaylandMessage {
-            body: buf,
-            object_id: head.object_id,
-            opcode: head.opcode,
-        })
+        Ok(message)
     }
 }
 
@@ -212,19 +309,13 @@ pub enum ConnectionError {
     /// The `XDG_RUNTIME_DIR` environment variable is not set.
     #[error("XDG_RUNTIME_DIR cannot be found in the environment.")]
     NoXdgRuntimeDir,
-    /// Could not connect to the Wayland display.
-    #[error("Could not connect to wayland display.")]
-    ConnectError(std::io::Error),
-    /// Could not clone the underlying Unix stream.
-    #[error("Could not clone the stream.")]
-    CloneError(std::io::Error),
-    /// Could not send the message.
-    #[error("Could not send the message.")]
-    SendError(std::io::Error),
-    /// Could not receive the message.
-    #[error("Could not receive the message.")]
-    RecvError(std::io::Error),
+    /// IO error occurred.
+    #[error("IO error occurred.")]
+    Io(#[from] std::io::Error),
     /// Error serializing or deserializing the message.
     #[error("Error serializing or deserializing the message.")]
     SerdeError(#[from] SerdeError),
+    /// Error decoding message.
+    #[error("Error decoding message.")]
+    DecodeError(#[from] DecodeMessageError),
 }

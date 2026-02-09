@@ -1,5 +1,7 @@
 //! Wayland message-related types and traits.
 
+use std::os::fd::{OwnedFd, RawFd};
+
 use thiserror::Error;
 
 use crate::{
@@ -62,6 +64,11 @@ pub trait IncomingMessage<T: MessageTypeMarker> {
     /// The type of interface associated with this message.
     type Interface: Interface;
 
+    /// The number of file descriptors associated with this message.
+    fn fd_count(_opcode: u16) -> usize {
+        0
+    }
+
     /// Attempt to decode a message from the given interface name, opcode, and data.
     ///
     /// # Errors
@@ -75,6 +82,7 @@ pub trait IncomingMessage<T: MessageTypeMarker> {
         opcode: u16,
         message_type: MessageType,
         data: &[u8],
+        fds: &[RawFd],
     ) -> Result<Self, DecodeMessageError>
     where
         Self: Sized;
@@ -86,6 +94,8 @@ pub trait OutgoingMessage<T: MessageTypeMarker>: EncodeWithNewId {
     type Interface: Interface;
     /// The opcode of the message.
     const OPCODE: u16;
+    /// The number of file descriptors associated with this message.
+    const FD_COUNT: usize = 0;
 
     /// The type of response expected from this event/request.
     type Response: MessageResponse;
@@ -120,7 +130,12 @@ pub trait EncodeWithNewId: MessageSize {
     /// - The provided data slice is not large enough to contain the encoded type.
     /// - An IO error occurs while writing to the data slice.
     /// - An invalid enum value is encountered while encoding an enum type.
-    fn encode(&self, data: &mut [u8], id_factory: IdFactory<'_>) -> Result<usize, SerdeError>;
+    fn encode(
+        &self,
+        data: &mut [u8],
+        id_factory: IdFactory<'_>,
+        fds: &mut [RawFd],
+    ) -> Result<usize, SerdeError>;
 }
 
 /// A hint used to allocate new IDs for a specific interface.
@@ -148,6 +163,7 @@ pub fn encode_message<T: EncodeWithNewId>(
     opcode: u16,
     data: &mut [u8],
     id_factory: IdFactory<'_>,
+    fds: &mut [RawFd],
 ) -> Result<usize, SerdeError> {
     let header = MessageHeader {
         object_id,
@@ -155,7 +171,7 @@ pub fn encode_message<T: EncodeWithNewId>(
         opcode,
     };
     header.encode(&mut data[..])?;
-    let encoded_size = message.encode(&mut data[MessageHeader::SIZE..], id_factory)?;
+    let encoded_size = message.encode(&mut data[MessageHeader::SIZE..], id_factory, fds)?;
 
     let final_size = MessageHeader::SIZE + encoded_size;
 

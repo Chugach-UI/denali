@@ -9,6 +9,8 @@ tokio = { workspace = true, features = ["full"] }
 denali-macro = { workspace = true }
 denali-core = { workspace = true }
 denali-client = { workspace = true }
+nix = { workspace = true }
+memfd = "0.6.5"
 
 [[example]]
 name = "simple"

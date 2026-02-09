@@ -1,6 +1,11 @@
 //! Connection types and traits.
 
-use crate::message::{Event, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request};
+use crate::{
+    message::{
+        Event, IncomingMessage, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request,
+    },
+    wire::serde::MessageHeader,
+};
 
 /// Connection types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +61,11 @@ pub trait Connection {
     ) -> Result<O::Response, Self::Error>;
 
     /// Receive the next message from the remote endpoint.
-    async fn next_message(&mut self) -> Result<RawWaylandMessage, Self::Error>;
+    async fn next_header(&mut self) -> Result<MessageHeader, Self::Error>;
+    /// Decode the next message from the remote endpoint.
+    async fn decode_message<M: IncomingMessage<Self::IncomingMessageType>>(
+        &mut self,
+    ) -> Result<M, Self::Error>;
 }
 
 /// Extension trait for client-sided connections.
