@@ -4,7 +4,10 @@ use convert_case::{Boundary, Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 
-use crate::protocol_parser::{Arg, ArgType, Description};
+use crate::{
+    InterfaceMap,
+    protocol_parser::{Arg, ArgType, Description},
+};
 
 pub fn arg_type_to_rust_type(
     type_: &ArgType,
@@ -69,6 +72,7 @@ pub fn build_documentation(
     };
 
     let doc_content = format!("{summary}\n{content}\n{since}");
+    let doc_content = doc_content.trim();
 
     quote! {
         #deprecation
@@ -100,25 +104,10 @@ pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
     syn::Ident::new(&name, Span::call_site())
 }
 
-pub fn interface_path(interface_map: &BTreeMap<String, String>, interface: &str) -> TokenStream {
-    let protocol = interface_map
-        .get(interface)
-        .unwrap_or_else(|| panic!("Interface '{interface}' not found in interface map"))
-        .clone();
-
-    let protocol_ident = build_ident(&protocol, Case::Snake);
-    let interface_ident = build_ident(interface, Case::Snake);
-    let interface_type_ident = build_ident(interface, Case::Pascal);
-
-    quote! {
-        super::super::#protocol_ident::#interface_ident::#interface_type_ident
-    }
-}
-
 /// Returns arg type and a bool for if a lifetime was used
 pub fn expand_argument_type(
     arg: &Arg,
-    interface_map: &BTreeMap<String, String>,
+    interface_map: &InterfaceMap,
     lifetime: Option<&str>,
     outgoing: bool,
 ) -> (TokenStream, bool) {
@@ -132,7 +121,7 @@ pub fn expand_argument_type(
             quote! { denali_core::id::DynamicObjectId #(<#lifetime>)* }
         }
         crate::protocol_parser::ArgType::NewId { interface } => {
-            let interface_path = interface_path(interface_map, interface);
+            let interface_path = interface_map.path_to_interface_type(interface);
             quote! { ObjectId<#interface_path> }
         }
         crate::protocol_parser::ArgType::ObjectId {
@@ -149,7 +138,7 @@ pub fn expand_argument_type(
             };
 
             let id_type = if let Some(interface) = interface {
-                let interface_path = interface_path(interface_map, interface);
+                let interface_path = interface_map.path_to_interface_type(interface);
                 quote! { #reference ObjectId<#interface_path> }
             } else {
                 quote! {
@@ -168,27 +157,9 @@ pub fn expand_argument_type(
             }
         }
         crate::protocol_parser::ArgType::Enum { enum_name } => {
-            let enum_parts = enum_name.split('.').collect::<Vec<_>>();
-            let path = if enum_parts.len() == 1 {
-                let ident = build_ident(enum_parts[0], Case::Pascal);
-                quote! { #ident }
-            } else if enum_parts.len() == 2 {
-                let protocol = interface_map.get(enum_parts[0]).unwrap_or_else(|| {
-                    panic!("Protocol '{}' not found in interface map", enum_parts[0])
-                });
-
-                let protocol = build_ident(protocol, Case::Snake);
-                let interface = build_ident(enum_parts[0], Case::Snake);
-
-                let ident = build_ident(enum_parts[1], Case::Pascal);
-
-                quote! { super::super::#protocol::#interface::#ident }
-            } else {
-                panic!("Invalid enum path: {enum_name}");
-            };
-
-            quote! {#path}
+            interface_map.path_to_enum_type(enum_name)
         }
+
         arg_type => {
             let (type_, used) = arg_type_to_rust_type(arg_type, lifetime);
             lifetime_used = used;

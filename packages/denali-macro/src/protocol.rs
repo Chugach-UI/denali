@@ -1,16 +1,14 @@
-use std::collections::BTreeMap;
-
 use convert_case::Case;
 use proc_macro2::TokenStream;
 
 use crate::{
-    Protocol, build_ident, helpers::build_documentation, interface::build_interface_module,
+    InterfaceMap, Protocol, build_ident, helpers::build_documentation, interface::build_interface_module
 };
 use quote::quote;
 
 pub fn build_protocol(
     protocol: &Protocol,
-    interface_map: &BTreeMap<String, String>,
+    interface_map: &InterfaceMap,
 ) -> TokenStream {
     let mod_name = build_ident(&protocol.name, Case::Snake);
 

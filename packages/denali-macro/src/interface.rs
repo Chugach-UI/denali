@@ -7,8 +7,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::{
-    MessageType, build_ident,
-    helpers::{build_documentation, expand_argument_type, interface_path},
+    InterfaceMap, MessageType, build_ident,
+    helpers::{build_documentation, expand_argument_type},
     protocol_parser::{ArgType, Interface, InterfaceElement, Message, MessageKind, NewIdType},
     wire::{build_enum, build_message_decode_body, build_message_encode_impl},
 };
@@ -26,7 +26,7 @@ pub struct InterfaceCtx {
 
 fn build_message_fields(
     ctx: &InterfaceCtx,
-    interface_map: &BTreeMap<String, String>,
+    interface_map: &InterfaceMap,
     message: &Message,
     outgoing: bool,
 ) -> (TokenStream, bool) {
@@ -95,7 +95,7 @@ fn build_message_fields(
 
 fn build_incoming_message_enums(
     ctx: &mut InterfaceCtx,
-    interface_map: &BTreeMap<String, String>,
+    interface_map: &InterfaceMap,
     interface: &Interface,
     message_type: MessageType,
 ) -> TokenStream {
@@ -218,7 +218,7 @@ fn build_incoming_message_enums(
 
 fn build_outgoing_message_structs(
     ctx: &mut InterfaceCtx,
-    interface_map: &BTreeMap<String, String>,
+    interface_map: &InterfaceMap,
     interface: &Interface,
     message_type: MessageType,
 ) -> TokenStream {
@@ -269,7 +269,7 @@ fn build_outgoing_message_structs(
             NewIdType::None => quote! { () },
             NewIdType::Generic => quote! {  ObjectId<I> },
             NewIdType::Typed { interface } => {
-                let interface_path = interface_path(interface_map, interface);
+                let interface_path = interface_map.path_to_interface_type(interface);
 
                 quote! {
                      ObjectId<#interface_path>
@@ -309,7 +309,7 @@ fn build_outgoing_message_structs(
 fn build_interface(
     ctx: &InterfaceCtx,
     interface: &Interface,
-    _interface_map: &BTreeMap<String, String>,
+    _interface_map: &InterfaceMap,
 ) -> TokenStream {
     let documentation = build_documentation(Some(&interface.description), None, None, None);
     let interface_str = interface
@@ -348,10 +348,7 @@ fn build_interface(
     }
 }
 
-pub fn build_interface_module(
-    interface: &Interface,
-    interface_map: &BTreeMap<String, String>,
-) -> TokenStream {
+pub fn build_interface_module(interface: &Interface, interface_map: &InterfaceMap) -> TokenStream {
     let interface_module_name = build_ident(&interface.name, Case::Snake);
     let interface_type_name = build_ident(&interface.name, Case::Pascal);
 

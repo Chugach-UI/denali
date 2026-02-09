@@ -55,7 +55,8 @@ pub fn main() {
     fs::write(
         code_path,
         format!(
-            "denali_macro::wayland_protocols!(\"{}\");",
+            "denali_macro::wayland_protocols!(\"{}\", []); denali_macro::dependency_info!(\"{}\");",
+            protocols_path.to_string_lossy(),
             protocols_path.to_string_lossy()
         ),
     )
@@ -70,13 +71,13 @@ fn get_file(client: &Client, protocols_path: &Path, file_path: String) {
 
 fn unpack_protocols_tar(client: &Client, protocols_path: &Path, archive_path: String) {
     let protocol_blacklist = [
-        "linux-dmabuf-unstable-v1.xml",
-        "tablet-unstable-v1.xml",
-        "tablet-unstable-v2.xml",
-        "text-input-unstable-v1.xml",
-        "xdg-foreign-unstable-v1.xml",
-        "xdg-shell-unstable-v5.xml",
-        "xdg-shell-unstable-v6.xml",
+        // "linux-dmabuf-unstable-v1.xml",
+        // "tablet-unstable-v1.xml",
+        // "tablet-unstable-v2.xml",
+        // "text-input-unstable-v1.xml",
+        // "xdg-foreign-unstable-v1.xml",
+        // "xdg-shell-unstable-v5.xml",
+        // "xdg-shell-unstable-v6.xml",
     ];
 
     let bytes = client.get(archive_path).send().unwrap().bytes().unwrap();
