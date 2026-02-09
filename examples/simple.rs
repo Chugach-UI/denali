@@ -61,7 +61,7 @@ async fn main() {
             let event = conn.decode_message::<WlRegistryEvent>().await.unwrap();
 
             let WlRegistryEvent::Global {
-                name, interface, ..
+                name, interface, version
             } = event
             else {
                 continue;
@@ -73,7 +73,7 @@ async fn main() {
                         .send_request(WlRegistryBindRequest {
                             sender: &registry,
                             name,
-                            id: NewIdHint::<WlShm>::new(),
+                            id: NewIdHint::<WlShm>::new(version),
                         })
                         .await
                         .ok();
@@ -83,7 +83,7 @@ async fn main() {
                         .send_request(WlRegistryBindRequest {
                             sender: &registry,
                             name,
-                            id: NewIdHint::<WlCompositor>::new(),
+                            id: NewIdHint::<WlCompositor>::new(version),
                         })
                         .await
                         .ok();
@@ -93,7 +93,7 @@ async fn main() {
                         .send_request(WlRegistryBindRequest {
                             sender: &registry,
                             name,
-                            id: NewIdHint::<XdgWmBase>::new(),
+                            id: NewIdHint::<XdgWmBase>::new(version),
                         })
                         .await
                         .ok();

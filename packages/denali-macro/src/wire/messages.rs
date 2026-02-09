@@ -17,7 +17,7 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
         ArgType::GenericNewId => quote! {
             denali_core::wire::serde::DynamicallyTypedNewId {
                 interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                version: 1,
+                version: #arg_access.version,
                 id: 0
             }
         },
@@ -58,24 +58,27 @@ pub fn build_message_encode_impl(
     let encode_conversions = message
         .args
         .iter()
-        .map(|arg| match arg.arg_type.clone() {
-            ArgType::GenericNewId => {
-                quote! {
-                    unsafe {
-                        denali_core::wire::serde::DynamicallyTypedNewId {
-                            interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                            version: 1,
-                            id: id_factory.peek_next_id().unwrap()
+        .map(|arg| {
+            let arg_name = build_ident(&arg.name, Case::Snake);
+            match arg.arg_type.clone() {
+                ArgType::GenericNewId => {
+                    quote! {
+                        unsafe {
+                            denali_core::wire::serde::DynamicallyTypedNewId {
+                                interface: denali_core::wire::serde::String::new(I::INTERFACE),
+                                version: self.#arg_name.version,
+                                id: id_factory.peek_next_id().unwrap()
+                            }
                         }
                     }
                 }
-            }
-            ArgType::NewId { .. } => {
-                quote! {
-                    unsafe { id_factory.peek_next_id().unwrap() }
+                ArgType::NewId { .. } => {
+                    quote! {
+                        unsafe { id_factory.peek_next_id().unwrap() }
+                    }
                 }
+                _ => arg_to_serde_type(arg),
             }
-            _ => arg_to_serde_type(arg),
         })
         .collect::<Vec<_>>();
 

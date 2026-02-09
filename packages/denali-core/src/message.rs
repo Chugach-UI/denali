@@ -143,12 +143,20 @@ pub trait EncodeWithNewId: MessageSize {
 /// # Example
 ///
 /// This hint is used in a `WlRegistryBindRequest` to type the returned object ID.
-pub struct NewIdHint<I: Interface>(std::marker::PhantomData<I>);
+pub struct NewIdHint<I: Interface> {
+    /// Version of the interface to be created
+    pub version: u32,
+    _marker: std::marker::PhantomData<I>,
+}
+
 impl<I: Interface> NewIdHint<I> {
     /// Creates a new `NewIdHint` instance.
     #[must_use]
-    pub const fn new() -> Self {
-        Self(std::marker::PhantomData)
+    pub const fn new(version: u32) -> Self {
+        Self {
+            version,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
