@@ -10,6 +10,7 @@ denali-macro = { path = "packages/denali-macro" }
 denali-core = { path = "packages/denali-core" }
 denali-protocol = { path = "packages/denali-protocol" }
 denali-client = { path = "packages/denali-client" }
+denali-build = { path = "packages/denali-build" }
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread", "signal", "macros", "net", "io-util"] }
 tracing = "0.1.41"

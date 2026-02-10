@@ -54,11 +54,7 @@ pub fn main() {
     let code_path = Path::new(&out_dir).join("denali_protocols.rs");
     fs::write(
         code_path,
-        format!(
-            "denali_macro::wayland_protocols!(\"{}\", []); denali_macro::dependency_info!(\"{}\");",
-            protocols_path.to_string_lossy(),
-            protocols_path.to_string_lossy()
-        ),
+        denali_build::denali_macro_invocations(&protocols_path.to_string_lossy(), &[]),
     )
     .unwrap();
 }
@@ -70,16 +66,6 @@ fn get_file(client: &Client, protocols_path: &Path, file_path: String) {
 }
 
 fn unpack_protocols_tar(client: &Client, protocols_path: &Path, archive_path: String) {
-    let protocol_blacklist = [
-        // "linux-dmabuf-unstable-v1.xml",
-        // "tablet-unstable-v1.xml",
-        // "tablet-unstable-v2.xml",
-        // "text-input-unstable-v1.xml",
-        // "xdg-foreign-unstable-v1.xml",
-        // "xdg-shell-unstable-v5.xml",
-        // "xdg-shell-unstable-v6.xml",
-    ];
-
     let bytes = client.get(archive_path).send().unwrap().bytes().unwrap();
 
     let tar = GzDecoder::new(&bytes[..]);
@@ -91,7 +77,6 @@ fn unpack_protocols_tar(client: &Client, protocols_path: &Path, archive_path: St
         if let Some(ext) = path.extension()
             && let Some(name) = path.file_name()
             && ext == "xml"
-            && !protocol_blacklist.contains(&name.to_string_lossy().into_owned().as_str())
         {
             entry.unpack(protocols_path.join(name)).unwrap();
         }
