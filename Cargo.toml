@@ -8,7 +8,7 @@ members = [
 [workspace.dependencies]
 denali-macro = { path = "packages/denali-macro" }
 denali-core = { path = "packages/denali-core" }
-denali-protocol = { path = "packages/denali-protocol" }
+denali-protocol-base = { path = "packages/denali-protocol-base" }
 denali-client = { path = "packages/denali-client" }
 denali-build = { path = "packages/denali-build" }
 thiserror = "2.0.16"

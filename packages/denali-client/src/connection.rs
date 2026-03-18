@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-use denali_protocol::wayland::wl_display::WlDisplay;
+use denali_protocol_base::wayland::wl_display::WlDisplay;
 use nix::{
     cmsg_space,
     sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg},

@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 denali-core = { workspace = true }
-denali-protocol = { workspace = true }
+denali-protocol-base = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

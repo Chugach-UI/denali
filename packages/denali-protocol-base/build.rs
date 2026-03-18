@@ -51,7 +51,7 @@ pub fn main() {
         wlr_protocols_unstable_archive_path,
     );
 
-    let code_path = Path::new(&out_dir).join("denali_protocols.rs");
+    let code_path = Path::new(&out_dir).join("protocols.rs");
     fs::write(
         code_path,
         denali_build::denali_macro_invocations(&protocols_path.to_string_lossy(), &[]),

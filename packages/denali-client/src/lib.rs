@@ -3,6 +3,6 @@
 //! See [`Connection`](connection::Connection)
 
 pub use denali_core as core;
-pub use denali_protocol as protocol;
+pub use denali_protocol_base as protocol;
 
 pub mod connection;
