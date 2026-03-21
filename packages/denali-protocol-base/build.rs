@@ -58,7 +58,7 @@ pub fn main() {
     let code_path = Path::new(&out_dir).join("protocols.rs");
     fs::write(
         code_path,
-        denali_build::denali_macro_invocations(&protocols_path.to_string_lossy(), &[]),
+        denali_build::denali_macro_invocations(&protocols_path.to_string_lossy()),
     )
     .unwrap();
 }

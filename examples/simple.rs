@@ -67,7 +67,7 @@ async fn main() {
                 continue;
             };
 
-            match interface.data.as_ref() {
+            match interface.as_ref() {
                 WlShm::INTERFACE => {
                     shm = conn
                         .send_request(WlRegistryBindRequest {

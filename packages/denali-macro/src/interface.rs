@@ -314,6 +314,7 @@ fn build_interface(
     let documentation = build_documentation(Some(&interface.description), None, None, None);
     let interface_str = interface
         .name
+        .without_boundaries(&[Boundary::LOWER_DIGIT])
         .to_case(Case::Snake);
     let name = &ctx.interface_name;
     let version = interface.version;

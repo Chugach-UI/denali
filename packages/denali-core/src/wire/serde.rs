@@ -1,8 +1,9 @@
 //! Serialization and deserialization of Wayland wire protocol messages.
 
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     io::{Cursor, Write},
+    ops::Deref,
 };
 
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
@@ -329,6 +330,24 @@ impl Encode for Array<'_> {
     }
 }
 
+impl AsRef<[u8]> for Array<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+impl Borrow<[u8]> for Array<'_> {
+    fn borrow(&self) -> &[u8] {
+        &self.data
+    }
+}
+impl Deref for Array<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
 /// A dynamically sized UTF-8 string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct String<'a> {
@@ -419,6 +438,24 @@ impl Encode for String<'_> {
         cursor.write_u8(0)?; // null terminator
 
         Ok(size)
+    }
+}
+
+impl AsRef<str> for String<'_> {
+    fn as_ref(&self) -> &str {
+        &self.data
+    }
+}
+impl Borrow<str> for String<'_> {
+    fn borrow(&self) -> &str {
+        &self.data
+    }
+}
+impl Deref for String<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
     }
 }
 

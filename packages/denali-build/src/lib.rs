@@ -11,7 +11,6 @@ use denali_protocol_parser::parse_protocol;
 use itertools::Itertools;
 
 fn parse_pair(pair: &str) -> (&str, &str) {
-    println!("{pair}");
     let (key, value) = pair.split_once(',').unwrap();
 
     let key = key.trim().trim_matches(['(', ')', '"']);
@@ -33,7 +32,7 @@ fn parse_info(info: &str) -> Vec<(&str, &str)> {
 /// Dependency info is saved in the format [("<interface>", "<protocol>")]
 pub fn parse_dependency_info(crate_name: &str) -> Vec<(String, String)> {
     let key = crate_name.to_case(convert_case::Case::UpperSnake);
-    let key = format!("{key}_DEPENDENCY_INFO");
+    let key = format!("DEP_{key}_DEPENDENCY_INFO");
     let value = std::env::var(key).unwrap();
 
     parse_info(&value)
@@ -77,7 +76,7 @@ fn external_interface_map(crate_name: &str, map: &[(impl AsRef<str>, impl AsRef<
 }
 
 /// Generate external interface maps for a protocols macro invocation
-pub fn external_interface_maps(maps: &[(&str, &[(&str, &str)])]) -> String {
+pub fn external_interface_maps(maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str>)])]) -> String {
     let elems = maps
         .iter()
         .map(|(cn, map)| external_interface_map(cn, map))
@@ -86,10 +85,14 @@ pub fn external_interface_maps(maps: &[(&str, &[(&str, &str)])]) -> String {
     format!("[{elems}]")
 }
 
+pub fn denali_macro_invocations(protocol_path: &str) -> String {
+    format!("denali_macro::wayland_protocols!(\"{protocol_path}\", []);")
+}
+
 /// Generate the contents of a file exporting wayland protocol(s)
-pub fn denali_macro_invocations(protocol_path: &str, maps: &[(&str, &[(&str, &str)])]) -> String {
+pub fn denali_macro_invocations_with_deps(protocol_path: &str, maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str>)])]) -> String {
     let maps = external_interface_maps(maps);
-    format!("denali_macro::wayland_protocols!(\"{protocol_path}\", {maps});",)
+    format!("denali_macro::wayland_protocols!(\"{protocol_path}\", {maps});")
 }
 
 #[cfg(test)]
