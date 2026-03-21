@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+use denali_build::export_dependency_info;
 use flate2::read::GzDecoder;
 use reqwest::blocking::Client;
 use tar::Archive;
@@ -50,6 +51,9 @@ pub fn main() {
         protocols_path.as_path(),
         wlr_protocols_unstable_archive_path,
     );
+
+    let map = denali_build::generate_protocol_map(protocols_path.as_path());
+    export_dependency_info(&map);
 
     let code_path = Path::new(&out_dir).join("protocols.rs");
     fs::write(

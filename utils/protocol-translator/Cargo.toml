@@ -1,0 +1,8 @@
+[package]
+name = "protocol-translator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+denali-protocol-parser.workspace = true
+toml = "1.0.7"

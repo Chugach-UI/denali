@@ -1,14 +1,14 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
+pub fn parse_protocol_xml(protocol: File) -> Result<Protocol, quick_xml::DeError> {
     let reader = BufReader::new(protocol);
     quick_xml::de::from_reader::<_, Protocol>(reader)
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Protocol {
     #[serde(rename = "@name")]
     pub name: String,
@@ -17,7 +17,7 @@ pub struct Protocol {
     pub interfaces: Vec<Interface>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Interface {
     #[serde(rename = "@name")]
     pub name: String,
@@ -28,7 +28,7 @@ pub struct Interface {
     pub elements: Vec<Element>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Element {
     Request(Message),
@@ -36,7 +36,7 @@ pub enum Element {
     Enum(Enum),
 }
 
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     #[serde(rename = "@name")]
     pub name: String,
@@ -51,7 +51,7 @@ pub struct Message {
     pub args: Vec<Arg>,
 }
 
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
     #[serde(rename = "@name")]
     pub name: String,
@@ -64,7 +64,7 @@ pub struct Enum {
     pub entries: Vec<Entry>,
 }
 
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     #[serde(rename = "@name")]
     pub name: String,
@@ -79,7 +79,7 @@ pub struct Entry {
     pub description: Option<Description>,
 }
 
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     #[serde(rename = "@name")]
     pub name: String,
@@ -96,7 +96,7 @@ pub struct Arg {
     pub description: Option<Description>,
 }
 
-#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Default, Debug, Clone, PartialEq, Eq)]
 pub struct Description {
     #[serde(rename = "@summary")]
     pub summary: String,

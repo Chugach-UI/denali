@@ -90,7 +90,6 @@ const ILLEGAL_IDENTS: [&str; 47] = [
 
 pub fn build_ident(name: &str, case: Case<'_>) -> syn::Ident {
     let name = name
-        .without_boundaries(&[Boundary::LOWER_DIGIT])
         .to_case(case);
 
     let name = if name.chars().next().is_some_and(|c| c.is_ascii_digit())

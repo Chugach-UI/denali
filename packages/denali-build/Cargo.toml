@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 itertools = "0.14.0"
+denali-protocol-parser = { workspace = true }
+convert_case = "0.11.0"
 
 [lints]
 workspace = true

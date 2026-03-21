@@ -5,4 +5,3 @@
 </p>
 
 Denali is a 100% Rust implemenation of the Wayland protocol.
-

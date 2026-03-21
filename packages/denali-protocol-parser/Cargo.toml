@@ -1,0 +1,12 @@
+[package]
+name = "denali-protocol-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itertools = "0.14.0"
+serde = { version = "1.0.219", features = ["derive"] }
+quick-xml = { version = "0.38.2", features = ["serialize"] }
+
+[lints]
+workspace = true

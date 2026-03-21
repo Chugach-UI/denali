@@ -1,9 +1,15 @@
+//! Serde support for Wayland protocol files
+
 use std::fs::File;
 
-mod serde;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 
+pub mod raw;
+
+/// Parse a protocol from an XML file
 pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
-    let serde_protocol = serde::parse_protocol(protocol)?;
+    let serde_protocol = raw::parse_protocol_xml(protocol)?;
 
     Ok(Protocol {
         name: serde_protocol.name,
@@ -16,15 +22,19 @@ pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
     })
 }
 
-fn transform_description(desc: Option<serde::Description>) -> Description {
+fn trim_text_lines(text: &str) -> String {
+    text.trim().lines().map(|line| line.trim()).join("\n")
+}
+
+fn transform_description(desc: Option<raw::Description>) -> Description {
     desc.map(|desc| Description {
-        summary: desc.summary,
-        content: desc.content.unwrap_or_default(),
+        summary: trim_text_lines(&desc.summary),
+        content: trim_text_lines(&desc.content.unwrap_or_default()),
     })
     .unwrap_or_default()
 }
 
-fn transform_interface(iface: serde::Interface) -> Interface {
+fn transform_interface(iface: raw::Interface) -> Interface {
     let mut request_opcode: i32 = -1;
     let mut event_opcode: i32 = -1;
 
@@ -32,15 +42,15 @@ fn transform_interface(iface: serde::Interface) -> Interface {
         .elements
         .into_iter()
         .map(|element| match element {
-            serde::Element::Request(request) => {
+            raw::Element::Request(request) => {
                 request_opcode += 1;
                 InterfaceElement::Request(transform_message(request, request_opcode as _))
             }
-            serde::Element::Event(event) => {
+            raw::Element::Event(event) => {
                 event_opcode += 1;
                 InterfaceElement::Event(transform_message(event, event_opcode as _))
             }
-            serde::Element::Enum(enum_) => InterfaceElement::Enum(transform_enum(enum_)),
+            raw::Element::Enum(enum_) => InterfaceElement::Enum(transform_enum(enum_)),
         })
         .collect();
 
@@ -52,7 +62,7 @@ fn transform_interface(iface: serde::Interface) -> Interface {
     }
 }
 
-fn transform_message(message: serde::Message, opcode: u32) -> Message {
+fn transform_message(message: raw::Message, opcode: u32) -> Message {
     let message_type = match message.type_ {
         None => MessageKind::Default,
         Some(kind) if kind == "destructor" => MessageKind::Destructor,
@@ -95,7 +105,7 @@ fn transform_message(message: serde::Message, opcode: u32) -> Message {
     }
 }
 
-fn transform_arg(arg: serde::Arg) -> Arg {
+fn transform_arg(arg: raw::Arg) -> Arg {
     let arg_type = match arg.type_.as_str() {
         "object" => ArgType::ObjectId {
             interface: arg.interface,
@@ -131,7 +141,7 @@ fn transform_arg(arg: serde::Arg) -> Arg {
     }
 }
 
-fn transform_enum(enum_: serde::Enum) -> Enum {
+fn transform_enum(enum_: raw::Enum) -> Enum {
     Enum {
         name: enum_.name,
         bitfield: enum_.bitfield.unwrap_or(false),
@@ -143,7 +153,7 @@ fn transform_enum(enum_: serde::Enum) -> Enum {
     }
 }
 
-fn transform_enum_variant(variant: serde::Entry) -> EnumVariant {
+fn transform_enum_variant(variant: raw::Entry) -> EnumVariant {
     let value = if variant.value.contains("0x") {
         i64::from(u32::from_str_radix(variant.value.trim_start_matches("0x"), 16).unwrap())
     } else {
@@ -164,14 +174,16 @@ fn transform_enum_variant(variant: serde::Entry) -> EnumVariant {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A Wayland protocol after slight transformations for ease of use
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct Protocol {
+    /// The name of the protocol
     pub name: String,
     pub description: Description,
     pub interfaces: Vec<Interface>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct Interface {
     pub name: String,
     pub version: u32,
@@ -179,29 +191,29 @@ pub struct Interface {
     pub elements: Vec<InterfaceElement>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum InterfaceElement {
     Request(Message),
     Event(Message),
     Enum(Enum),
 }
 impl InterfaceElement {
-    const fn is_request(&self) -> bool {
+    pub const fn is_request(&self) -> bool {
         matches!(self, InterfaceElement::Request(_))
     }
-    const fn is_event(&self) -> bool {
+    pub const fn is_event(&self) -> bool {
         matches!(self, InterfaceElement::Event(_))
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MessageKind {
     Destructor,
     #[default]
     Default,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub struct Message {
     pub name: String,
     pub opcode: u32,
@@ -213,7 +225,7 @@ pub struct Message {
     pub fd_args: Vec<FdArg>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum ArgType {
     GenericNewId,
     NewId {
@@ -242,14 +254,14 @@ impl ArgType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub enum NewIdType {
     None,
     Generic,
     Typed { interface: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub name: String,
     pub arg_type: ArgType,
@@ -257,7 +269,7 @@ pub struct Arg {
     pub description: Description,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct FdArg {
     pub name: String,
     pub summary: String,
@@ -270,7 +282,7 @@ pub enum EnumInnerType {
     I32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct Enum {
     pub name: String,
     pub bitfield: bool,
@@ -286,7 +298,7 @@ impl Enum {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct EnumVariant {
     pub name: String,
     pub value: i64, // i64 to fit cases of u32 max and negatives
@@ -295,7 +307,7 @@ pub struct EnumVariant {
     pub description: Description,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
+#[derive(Default, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Description {
     pub summary: String,
     pub content: String,

@@ -3,11 +3,12 @@
 mod helpers;
 mod interface;
 mod protocol;
-mod protocol_parser;
 mod type_paths;
 mod wire;
 
-use std::{collections::BTreeMap, ffi::OsString, fs::File, path::PathBuf};
+use denali_protocol_parser as protocol_parser;
+
+use std::{ffi::OsString, fs::File, path::PathBuf};
 
 use helpers::build_ident;
 use proc_macro::TokenStream;
@@ -103,34 +104,6 @@ pub fn wayland_protocols(input: TokenStream) -> TokenStream {
         }
         .into(),
     }
-}
-
-#[proc_macro]
-pub fn dependency_info(input: TokenStream) -> TokenStream {
-    let expr = syn::parse_macro_input!(input as syn::LitStr);
-
-    let protocols = protocols_from_path(&expr).unwrap();
-
-    let pairs = protocols
-        .iter()
-        .map(|protocol| {
-            protocol.interfaces.iter().map(|interface| {
-                let name = &interface.name;
-                let protocol = &protocol.name;
-                quote! {(#name, #protocol)}
-            })
-        })
-        .flatten()
-        .collect::<Vec<_>>();
-
-    let len = pairs.len();
-
-    quote! {
-        pub const DEPENDENCY_INFO: [(&str, &str); #len] = [
-            #(#pairs),*
-        ];
-    }
-    .into()
 }
 
 fn protocols_from_path(path: &syn::LitStr) -> Result<Vec<Protocol>, String> {

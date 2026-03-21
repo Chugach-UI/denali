@@ -7,12 +7,12 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
-convert_case = "0.8.0"
-proc-macro2 = "1.0.101"
-quick-xml = { version = "0.38.2", features = ["serialize"] }
-quote = "1.0.40"
-serde = { version = "1.0.219", features = ["derive"] }
-syn = "2.0.106"
+convert_case = "0.11.0"
+proc-macro2 = "1.0.106"
+quote = "1.0.45"
+denali-protocol-parser = { workspace = true }
+
+syn = "2.0.117"
 walkdir = "2.5.0"
 
 [lints]
