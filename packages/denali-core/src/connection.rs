@@ -63,8 +63,11 @@ pub trait Connection {
     /// Receive the next message from the remote endpoint.
     async fn next_header(&mut self) -> Result<MessageHeader, Self::Error>;
     /// Decode the next message from the remote endpoint.
-    async fn decode_message<M: IncomingMessage<Self::IncomingMessageType>>(
-        &mut self,
+    ///
+    /// The returned message may borrow from the connection's internal buffer.
+    /// The buffer is reclaimed on the next call to this method or [`next_header`](Self::next_header).
+    async fn decode_message<'a, M: IncomingMessage<'a, Self::IncomingMessageType>>(
+        &'a mut self,
     ) -> Result<M, Self::Error>;
 }
 

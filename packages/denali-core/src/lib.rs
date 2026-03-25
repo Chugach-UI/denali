@@ -43,9 +43,9 @@ pub trait Interface {
     const MAX_VERSION: u32;
 
     /// The event type for this interface.
-    type Event<'a>: IncomingMessage<Event, Interface = Self>;
+    type Event<'a>: IncomingMessage<'a, Event, Interface = Self>;
     /// The request type for this interface.
-    type Request<'a>: IncomingMessage<Request, Interface = Self>;
+    type Request<'a>: IncomingMessage<'a, Request, Interface = Self>;
 }
 
 /// Extension methods for interfaces.
@@ -56,7 +56,7 @@ pub trait InterfaceExt: Interface {
         data: &'a [u8],
         fds: &[RawFd],
     ) -> Result<Self::Event<'a>, DecodeMessageError> {
-        Self::Event::try_decode(Self::INTERFACE, opcode, MessageType::Event, data, fds)
+        <Self::Event<'a>>::try_decode(Self::INTERFACE, opcode, MessageType::Event, data, fds)
     }
 
     /// Attempts to decode an incoming request message for this interface.
@@ -65,7 +65,7 @@ pub trait InterfaceExt: Interface {
         data: &'a [u8],
         fds: &[RawFd],
     ) -> Result<Self::Request<'a>, DecodeMessageError> {
-        Self::Request::try_decode(Self::INTERFACE, opcode, MessageType::Request, data, fds)
+        <Self::Request<'a>>::try_decode(Self::INTERFACE, opcode, MessageType::Request, data, fds)
     }
 }
 impl<I: Interface> InterfaceExt for I {}

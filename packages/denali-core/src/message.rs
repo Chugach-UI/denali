@@ -60,7 +60,7 @@ pub struct RawWaylandMessage {
 }
 
 /// Represents a message (either request or event) incoming over the wayland wire.
-pub trait IncomingMessage<T: MessageTypeMarker> {
+pub trait IncomingMessage<'de, T: MessageTypeMarker>: Sized {
     /// The type of interface associated with this message.
     type Interface: Interface;
 
@@ -81,11 +81,9 @@ pub trait IncomingMessage<T: MessageTypeMarker> {
         interface: &str,
         opcode: u16,
         message_type: MessageType,
-        data: &[u8],
+        data: &'de [u8],
         fds: &[RawFd],
-    ) -> Result<Self, DecodeMessageError>
-    where
-        Self: Sized;
+    ) -> Result<Self, DecodeMessageError>;
 }
 
 /// Represents a message (either request or event) outgoing over the wayland wire.

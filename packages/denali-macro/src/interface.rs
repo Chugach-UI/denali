@@ -150,10 +150,16 @@ fn build_incoming_message_enums(
         ctx.event_enum_needs_lifetime = needs_lifetime;
     }
 
-    let lifetime = if needs_lifetime {
+    let enum_lifetime = if needs_lifetime {
         quote! { <'a> }
     } else {
         quote! {}
+    };
+
+    let (impl_generics, trait_lifetime, data_lifetime) = if needs_lifetime {
+        (quote! { <'a> }, quote! { 'a }, quote! { 'a })
+    } else {
+        (quote! { <'de> }, quote! { 'de }, quote! { 'de })
     };
 
     let decode_arms = messages.iter().map(|msg| {
@@ -177,11 +183,11 @@ fn build_incoming_message_enums(
     });
 
     quote! {
-        pub enum #incoming_enum_name #lifetime {
+        pub enum #incoming_enum_name #enum_lifetime {
             #(#variants),*
         }
 
-        impl #lifetime IncomingMessage<#message_type_marker> for #incoming_enum_name #lifetime {
+        impl #impl_generics IncomingMessage<#trait_lifetime, #message_type_marker> for #incoming_enum_name #enum_lifetime {
             type Interface = #interface_name;
 
             fn fd_count(opcode: u16) -> usize {
@@ -195,7 +201,7 @@ fn build_incoming_message_enums(
                 interface: &str,
                 opcode: u16,
                 message_type: denali_core::message::MessageType,
-                data: &[u8],
+                data: &#data_lifetime [u8],
                 fds: &[std::os::fd::RawFd],
             ) -> Result<Self, denali_core::message::DecodeMessageError> {
                 if message_type != #message_type_enum {

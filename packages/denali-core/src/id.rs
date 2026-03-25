@@ -9,9 +9,9 @@
 //! # Example
 //!
 //! ```
-//! use denali_core::id_manager::IdManager;
+//! use denali_core::id::IdManager;
 //!
-//! let id_manager = IdManager::new();
+//! let mut id_manager = IdManager::new();
 //! let id1 = id_manager.alloc_id().unwrap();
 //! let id2 = id_manager.alloc_id().unwrap();
 //! assert_ne!(id1, id2);

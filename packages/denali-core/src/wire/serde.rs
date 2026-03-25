@@ -72,8 +72,8 @@ macro_rules! impl_serde {
         impl CompileTimeMessageSize for $name {
             const SIZE: usize = size_of::<Self>();
         }
-        impl Decode for $name {
-            fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+        impl<'de> Decode<'de> for $name {
+            fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
                 ensure_size!(data, Self);
                 let mut data = Cursor::new(data);
                 paste! {
@@ -108,8 +108,8 @@ macro_rules! impl_serde {
                     Self::SIZE
                 }
             }
-            impl Decode for $type {
-                fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+            impl<'de> Decode<'de> for $type {
+                fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
                     ensure_size!(data, Self);
                     let mut data = Cursor::new(data);
                     paste! {
@@ -132,7 +132,7 @@ macro_rules! impl_serde {
 }
 
 /// A type that can be decoded from the Wayland wire protocol.
-pub trait Decode: MessageSize + Sized {
+pub trait Decode<'de>: MessageSize + Sized {
     /// Decodes an instance of this type from the provided byte slice.
     ///
     /// # Errors
@@ -141,7 +141,7 @@ pub trait Decode: MessageSize + Sized {
     /// - The provided data slice is not large enough to contain the expected type.
     /// - An IO error occurs while reading from the data slice.
     /// - An invalid enum value is encountered while decoding an enum type.
-    fn decode(data: &[u8]) -> Result<Self, SerdeError>;
+    fn decode(data: &'de [u8]) -> Result<Self, SerdeError>;
 }
 
 /// A type that can be encoded to the Wayland wire protocol.
@@ -180,8 +180,8 @@ impl MessageSize for () {
 impl CompileTimeMessageSize for () {
     const SIZE: usize = size_of::<Self>();
 }
-impl Decode for () {
-    fn decode(_data: &[u8]) -> Result<Self, SerdeError> {
+impl<'de> Decode<'de> for () {
+    fn decode(_data: &'de [u8]) -> Result<Self, SerdeError> {
         Ok(())
     }
 }
@@ -199,8 +199,8 @@ impl MessageSize for Fixed {
 impl CompileTimeMessageSize for Fixed {
     const SIZE: usize = size_of::<Self>();
 }
-impl Decode for Fixed {
-    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+impl<'de> Decode<'de> for Fixed {
+    fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
         ensure_size!(data, Fixed);
         let mut cursor = Cursor::new(data);
         let value = cursor.read_i32::<LE>()?;
@@ -236,11 +236,11 @@ impl MessageSize for DynamicallyTypedNewId<'_> {
         pad_to_32_bits(self.interface.size()) + u32::SIZE + RawObjectId::SIZE
     }
 }
-impl Decode for DynamicallyTypedNewId<'_> {
-    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+impl<'de> Decode<'de> for DynamicallyTypedNewId<'de> {
+    fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
         let mut traverser = super::MessageDecoder::new(data);
 
-        let interface: String<'_> = traverser.read()?;
+        let interface: String<'de> = traverser.read()?;
         let version = traverser.read()?;
         let id = traverser.read()?;
         Ok(DynamicallyTypedNewId {
@@ -296,8 +296,8 @@ impl MessageSize for Array<'_> {
     }
 }
 
-impl Decode for Array<'_> {
-    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+impl<'de> Decode<'de> for Array<'de> {
+    fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
         ensure_size!(data, u32);
 
         let mut cursor = Cursor::new(data);
@@ -310,8 +310,7 @@ impl Decode for Array<'_> {
         let array_data = &data[4..size + 4];
 
         Ok(Array {
-            // TODO: REMOVE USAGE OF HEAP HERE!!!
-            data: array_data.to_owned().into(),
+            data: array_data.into(),
         })
     }
 }
@@ -394,8 +393,8 @@ impl MessageSize for String<'_> {
     }
 }
 
-impl Decode for String<'_> {
-    fn decode(data: &[u8]) -> Result<Self, SerdeError> {
+impl<'de> Decode<'de> for String<'de> {
+    fn decode(data: &'de [u8]) -> Result<Self, SerdeError> {
         ensure_size!(data, u32);
 
         let mut cursor = Cursor::new(data);
@@ -420,8 +419,7 @@ impl Decode for String<'_> {
         };
 
         Ok(Self {
-            //TODO: Remove heap usage!!!
-            data: string_data.to_owned().into(),
+            data: string_data.into(),
         })
     }
 }

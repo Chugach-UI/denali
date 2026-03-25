@@ -49,6 +49,9 @@ struct WaylandSocket {
 
     // Effectively a numeric id for the current header
     header_counter: u32,
+    // Bytes to drain from message_buffer at the start of the next operation.
+    // This deferred drain allows decoded messages to borrow from the buffer.
+    pending_drain: usize,
 }
 impl WaylandSocket {
     pub fn new(socket: UnixStream) -> Self {
@@ -58,6 +61,15 @@ impl WaylandSocket {
             fd_queue: VecDeque::with_capacity(10),
             cmsg_buffer: cmsg_space!([RawFd; 10]),
             header_counter: 0,
+            pending_drain: 0,
+        }
+    }
+
+    /// Drains any bytes left over from a previously decoded message.
+    fn drain_pending(&mut self) {
+        if self.pending_drain > 0 {
+            self.message_buffer.drain(..self.pending_drain);
+            self.pending_drain = 0;
         }
     }
 
@@ -132,6 +144,8 @@ impl WaylandSocket {
     }
 
     pub async fn peek_header(&mut self) -> Result<MessageHeader, ConnectionError> {
+        self.drain_pending();
+
         let mut data = [0u8; MessageHeader::SIZE];
 
         self.read_at_least(MessageHeader::SIZE, 0).await?;
@@ -149,8 +163,10 @@ impl WaylandSocket {
         Ok(())
     }
 
-    pub async fn next_message<M: IncomingMessage<Event>>(&mut self) -> Result<M, ConnectionError> {
-        let header = self.peek_header().await?;
+    pub async fn next_message<'a, M: IncomingMessage<'a, Event>>(&'a mut self) -> Result<M, ConnectionError> {
+        self.drain_pending();
+
+        let header = self.peek_header_inner().await?;
         self.read_at_least(header.size as _, M::fd_count(header.opcode))
             .await?;
 
@@ -169,11 +185,21 @@ impl WaylandSocket {
             &fds,
         )?;
 
-        self.message_buffer.drain(..header.size as usize);
-
+        self.pending_drain = header.size as usize;
         self.header_counter += 1;
 
         Ok(message)
+    }
+
+    /// Peeks the header without draining pending data first.
+    /// Used internally by `next_message` which drains at the start.
+    async fn peek_header_inner(&mut self) -> Result<MessageHeader, ConnectionError> {
+        let mut data = [0u8; MessageHeader::SIZE];
+
+        self.read_at_least(MessageHeader::SIZE, 0).await?;
+        peek_front_bytes(&self.message_buffer, &mut data);
+
+        MessageHeader::decode(&data).map_err(Into::into)
     }
 }
 
@@ -292,8 +318,8 @@ impl denali_core::connection::Connection for Connection {
 
         Ok(header)
     }
-    async fn decode_message<M: IncomingMessage<Self::IncomingMessageType>>(
-        &mut self,
+    async fn decode_message<'a, M: IncomingMessage<'a, Self::IncomingMessageType>>(
+        &'a mut self,
     ) -> Result<M, Self::Error> {
         let message = self.socket.next_message::<M>().await?;
 

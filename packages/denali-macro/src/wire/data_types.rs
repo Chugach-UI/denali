@@ -92,8 +92,8 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
             impl denali_core::wire::serde::CompileTimeMessageSize for #name {
                 const SIZE: usize = size_of::<Self>();
             }
-            impl denali_core::wire::serde::Decode for #name {
-                fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
+            impl<'de> denali_core::wire::serde::Decode<'de> for #name {
+                fn decode(data: &'de [u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
                     let mut traverser = denali_core::wire::MessageDecoder::new(data);
                     let value = traverser.read::<#type_stream>()?;
                     Self::from_bits(value).ok_or(denali_core::wire::serde::SerdeError::InvalidEnumValue)
@@ -123,8 +123,8 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
             impl denali_core::wire::serde::CompileTimeMessageSize for #name {
                 const SIZE: usize = size_of::<Self>();
             }
-            impl denali_core::wire::serde::Decode for #name {
-                fn decode(data: &[u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
+            impl<'de> denali_core::wire::serde::Decode<'de> for #name {
+                fn decode(data: &'de [u8]) -> Result<Self, denali_core::wire::serde::SerdeError> {
                     let mut traverser = denali_core::wire::MessageDecoder::new(data);
                     let value = traverser.read::<#type_stream>()?;
                     Ok(match value {

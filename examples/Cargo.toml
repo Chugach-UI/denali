@@ -17,5 +17,5 @@ name = "simple"
 path = "simple.rs"
 
 [[example]]
-name = "wayland_book"
-path = "wayland_book.rs"
+name = "gamma"
+path = "gamma.rs"

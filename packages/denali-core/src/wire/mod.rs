@@ -34,7 +34,7 @@ impl<'a> MessageDecoder<'a> {
     /// # Errors
     ///
     /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
-    pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
+    pub fn read<T: serde::Decode<'a>>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
         let data = &self.data.get_ref()[pos as usize..];
 
@@ -78,10 +78,12 @@ impl<'a> MessageEncoder<'a> {
 
     /// Reads a value of type `T` from the current position in the byte buffer.
     ///
+    /// Only non-borrowing types can be read from an encoder. For borrowing types, use [`MessageDecoder`].
+    ///
     /// # Errors
     ///
     /// Returns an error if decoding fails. See [`Decode::decode`](serde::Decode::decode) for more details.
-    pub fn read<T: serde::Decode>(&mut self) -> Result<T, serde::SerdeError> {
+    pub fn read<T: for<'de> serde::Decode<'de>>(&mut self) -> Result<T, serde::SerdeError> {
         let pos = self.position();
         let data = &self.data.get_ref()[pos as usize..];
 
@@ -131,7 +133,7 @@ mod tests {
 
     use crate::wire::serde::Array;
 
-    use super::MessageEncoder;
+    use super::{MessageDecoder, MessageEncoder};
 
     #[bench]
     fn bench_message_traverser_write(b: &mut test::Bencher) {
@@ -157,57 +159,59 @@ mod tests {
     }
     #[bench]
     fn bench_message_traverser_read(b: &mut test::Bencher) {
-        let mut buffer = [
-            1, 0, 0, 0, 16, 0, 3, 0, 8, 0, 0, 0, 19, 0, 0, 0, 4, 0, 0, 0, 4, 4, 4, 4, 4, 0, 0, 0,
+        let buffer = [
+            1, 0, 0, 0, 16, 0, 3, 0, 8, 0, 0, 0, 19, 0, 0, 0, 4, 0, 0, 0, 4, 4, 4, 4, 5, 0, 0, 0,
             116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let mut traverser = MessageEncoder::new(&mut buffer);
+        let mut decoder = MessageDecoder::new(&buffer);
 
         b.iter(|| {
-            let _header: super::serde::MessageHeader = traverser.read().unwrap();
-            let _value_i32: i32 = traverser.read().unwrap();
-            let _value_u32: u32 = traverser.read().unwrap();
-            let _array: Array<'_> = traverser.read().unwrap();
-            let _string: super::serde::String<'_> = traverser.read().unwrap();
-            traverser.set_position(0);
+            let _header: super::serde::MessageHeader = decoder.read().unwrap();
+            let _value_i32: i32 = decoder.read().unwrap();
+            let _value_u32: u32 = decoder.read().unwrap();
+            let _array: Array<'_> = decoder.read().unwrap();
+            let _string: super::serde::String<'_> = decoder.read().unwrap();
+            decoder.set_position(0);
         });
     }
 
     #[test]
     fn test_message_traverser() {
         let mut buffer = [0u8; 64];
-        let mut traverser = MessageEncoder::new(&mut buffer);
+        {
+            let mut encoder = MessageEncoder::new(&mut buffer);
 
-        // test encoding
-        traverser
-            .write(&super::serde::MessageHeader {
-                object_id: 1,
-                size: 16,
-                opcode: 3,
-            })
-            .unwrap();
-        traverser.write(&8i32).unwrap();
-        traverser.write(&19u32).unwrap();
-        traverser.write::<Array<'_>>(&[4u8; 4].into()).unwrap();
-        traverser
-            .write::<super::serde::String<'_>>(&"test".into())
-            .unwrap();
+            // test encoding
+            encoder
+                .write(&super::serde::MessageHeader {
+                    object_id: 1,
+                    size: 16,
+                    opcode: 3,
+                })
+                .unwrap();
+            encoder.write(&8i32).unwrap();
+            encoder.write(&19u32).unwrap();
+            encoder.write::<Array<'_>>(&[4u8; 4].into()).unwrap();
+            encoder
+                .write::<super::serde::String<'_>>(&"test".into())
+                .unwrap();
+        }
 
         // test decoding
-        traverser.set_position(0);
-        let header: super::serde::MessageHeader = traverser.read().unwrap();
+        let mut decoder = MessageDecoder::new(&buffer);
+        let header: super::serde::MessageHeader = decoder.read().unwrap();
         assert_eq!(header.object_id, 1);
         assert_eq!(header.size, 16);
         assert_eq!(header.opcode, 3);
-        let value_i32: i32 = traverser.read().unwrap();
+        let value_i32: i32 = decoder.read().unwrap();
         assert_eq!(value_i32, 8);
-        let value_u32: u32 = traverser.read().unwrap();
+        let value_u32: u32 = decoder.read().unwrap();
         assert_eq!(value_u32, 19);
-        let array: Array<'_> = traverser.read().unwrap();
+        let array: Array<'_> = decoder.read().unwrap();
         assert_eq!(array.data.len(), 4);
         assert_eq!(&*array.data, &[4u8; 4]);
-        let string: super::serde::String<'_> = traverser.read().unwrap();
+        let string: super::serde::String<'_> = decoder.read().unwrap();
         assert_eq!(string.data, "test");
     }
 }
