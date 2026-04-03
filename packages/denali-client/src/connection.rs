@@ -3,28 +3,30 @@
 use std::{
     collections::VecDeque,
     env,
-    io::{ErrorKind, IoSlice, IoSliceMut},
-    os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd},
+    io::{IoSlice, IoSliceMut},
+    os::fd::{AsRawFd, FromRawFd, RawFd},
+    os::unix::net::UnixStream,
     path::PathBuf,
 };
 
-use denali_protocol_base::wayland::wl_display::WlDisplay;
+use async_io::Async;
+use denali_protocol_base::wayland::{
+    wl_callback::WlCallbackEvent,
+    wl_display::{WlDisplay, WlDisplaySyncRequest},
+};
+use futures_lite::io::AsyncWriteExt;
 use nix::{
     cmsg_space,
     sys::socket::{ControlMessage, ControlMessageOwned, MsgFlags, recvmsg, sendmsg},
 };
 use thiserror::Error;
-use tokio::{
-    io::{AsyncWriteExt, Interest},
-    net::UnixStream,
-};
 
 use denali_core::{
     Interface,
-    connection::ConnectionType,
+    connection::{ClientConnection, ConnectionType},
     id::{IdFactory, IdManager, ObjectId},
     message::{DecodeMessageError, Event, MessageResponse, Request, encode_message},
-    prelude::IncomingMessage,
+    prelude::{Connection as _, IncomingMessage},
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, SerdeError},
 };
 
@@ -40,7 +42,7 @@ fn peek_front_bytes<T: Copy>(queue: &VecDeque<T>, dest: &mut [T]) -> usize {
 }
 
 struct WaylandSocket {
-    socket: UnixStream,
+    socket: Async<UnixStream>,
 
     message_buffer: VecDeque<u8>,
     fd_queue: VecDeque<RawFd>,
@@ -54,7 +56,7 @@ struct WaylandSocket {
     pending_drain: usize,
 }
 impl WaylandSocket {
-    pub fn new(socket: UnixStream) -> Self {
+    pub fn new(socket: Async<UnixStream>) -> Self {
         Self {
             socket,
             message_buffer: VecDeque::with_capacity(1024),
@@ -76,21 +78,22 @@ impl WaylandSocket {
     /// Reads data from the socket and stores it in the internal buffer to be decoded later.
     /// Returns the number of bytes read and the number of file descriptors received.
     pub async fn read_with_ancillary_data(&mut self) -> std::io::Result<(usize, usize)> {
-        self.socket.ready(Interest::READABLE).await?;
-
         let mut temp_buf = [0; 1024];
         let mut iov = [IoSliceMut::new(&mut temp_buf)];
 
-        let result = self.socket.try_io(Interest::READABLE, || {
-            let fd = self.socket.as_raw_fd();
+        let cmsg_buf = &mut self.cmsg_buffer;
+        let fd_queue = &mut self.fd_queue;
 
-            match recvmsg::<()>(fd, &mut iov, Some(&mut self.cmsg_buffer), MsgFlags::empty()) {
+        let result = self.socket.read_with(|socket| {
+            let fd = socket.as_raw_fd();
+
+            match recvmsg::<()>(fd, &mut iov, Some(cmsg_buf), MsgFlags::empty()) {
                 Ok(msg) => {
                     let mut fds_received = 0;
                     msg.cmsgs()?.into_iter().for_each(|cmsg| {
                         if let ControlMessageOwned::ScmRights(received_fds) = cmsg {
                             fds_received += received_fds.len();
-                            self.fd_queue.extend(received_fds.into_iter());
+                            fd_queue.extend(received_fds.into_iter());
                         }
                     });
 
@@ -98,7 +101,7 @@ impl WaylandSocket {
                 }
                 Err(e) => Err(std::io::Error::from(e)),
             }
-        })?;
+        }).await?;
 
         self.message_buffer.extend(&temp_buf[..result.0]);
 
@@ -110,12 +113,10 @@ impl WaylandSocket {
         data: &[u8],
         fds: &[RawFd],
     ) -> std::io::Result<usize> {
-        self.socket.ready(Interest::WRITABLE).await?;
-
         let iov = [IoSlice::new(data)];
 
-        let result = self.socket.try_io(Interest::WRITABLE, || {
-            let socket_fd = self.socket.as_raw_fd();
+        self.socket.write_with(|socket| {
+            let socket_fd = socket.as_raw_fd();
 
             let cmsg = if !fds.is_empty() {
                 vec![ControlMessage::ScmRights(fds)]
@@ -127,9 +128,7 @@ impl WaylandSocket {
                 Ok(bytes_sent) => Ok(bytes_sent),
                 Err(e) => Err(std::io::Error::from(e)),
             }
-        })?;
-
-        Ok(result)
+        }).await
     }
 
     pub async fn read_at_least(&mut self, bytes: usize, fds: usize) -> Result<(), std::io::Error> {
@@ -225,9 +224,8 @@ impl Connection {
         let socket = {
             if let Ok(socket) = env::var("WAYLAND_SOCKET") {
                 let stream =
-                    unsafe { std::os::unix::net::UnixStream::from_raw_fd(socket.parse().unwrap()) };
-                stream.set_nonblocking(true).unwrap();
-                UnixStream::from_std(stream)?
+                    unsafe { UnixStream::from_raw_fd(socket.parse().unwrap()) };
+                Async::new(stream)?
             } else {
                 let wayland_display = env::var("WAYLAND_DISPLAY").unwrap_or("wayland-0".into());
                 let mut wayland_display = PathBuf::from(wayland_display);
@@ -237,7 +235,7 @@ impl Connection {
                     let xdg_runtime_dir = PathBuf::from(xdg_runtime_dir);
                     wayland_display = xdg_runtime_dir.join(wayland_display);
                 }
-                UnixStream::connect(wayland_display).await?
+                Async::<UnixStream>::connect(wayland_display).await?
             }
         };
         let socket = WaylandSocket::new(socket);
@@ -253,6 +251,26 @@ impl Connection {
             },
             display_id,
         ))
+    }
+}
+
+impl Connection {
+    /// Perform a display sync roundtrip, discarding all intermediate events.
+    ///
+    /// Useful for draining pending events (e.g. `wl_output` info) before
+    /// proceeding with further protocol setup.
+    pub async fn roundtrip(
+        &mut self,
+        display: &ObjectId<WlDisplay>,
+    ) -> Result<(), ConnectionError> {
+        let sync_cb = ClientConnection::send_request(self, WlDisplaySyncRequest { sender: display }).await?;
+        loop {
+            let head = self.next_header().await?;
+            if head.object_id == sync_cb {
+                _ = self.decode_message::<WlCallbackEvent>().await?;
+                return Ok(());
+            }
+        }
     }
 }
 

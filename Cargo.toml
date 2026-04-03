@@ -13,7 +13,9 @@ denali-protocol-base = { path = "packages/denali-protocol-base" }
 denali-client = { path = "packages/denali-client" }
 denali-build = { path = "packages/denali-build" }
 thiserror = "2.0.16"
-tokio = { version = "1.47.1", features = ["sync", "rt-multi-thread", "signal", "macros", "net", "io-util"] }
+async-io = "2"
+futures-lite = "2"
+smol = "2"
 tracing = "0.1.41"
 nix = { version = "0.29", features = ["socket", "uio"] }
 

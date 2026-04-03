@@ -186,13 +186,17 @@ pub fn build_message_decode_body(message: &Message) -> TokenStream {
         .iter()
         .map(|arg| build_ident(&arg.name, Case::Snake));
 
-    quote! {
-        #(#definitions)*
-        #(#fd_definitions)*
+    if message.args.is_empty() && message.fd_args.is_empty() {
+        quote! { Self::#message_ident }
+    } else {
+        quote! {
+            #(#definitions)*
+            #(#fd_definitions)*
 
-        Self::#message_ident {
-            #(#arg_names,)*
-            #(#fd_names),*
+            Self::#message_ident {
+                #(#arg_names,)*
+                #(#fd_names),*
+            }
         }
     }
 }

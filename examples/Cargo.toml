@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
+smol = { workspace = true }
 denali-macro = { workspace = true }
 denali-core = { workspace = true }
 denali-client = { workspace = true }

@@ -11,7 +11,6 @@ frunk = "0.4.4"
 num-traits = "0.2.19"
 paste = "1.0.15"
 thiserror = { workspace = true }
-tokio = { workspace = true }
 
 [lints]
 workspace = true

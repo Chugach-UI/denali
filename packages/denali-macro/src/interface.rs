@@ -81,16 +81,21 @@ fn build_message_fields(
             quote! { #field_name: #field_type }
         });
 
-    (
+    let has_fields = outgoing || !message.args.is_empty() || !message.fd_args.is_empty();
+
+    let fields_tokens = if has_fields {
         quote! {
             {
                 #sender_field
                 #(#vis #fd_fields,)*
                 #(#vis #fields),*
             }
-        },
-        needs_lifetime,
-    )
+        }
+    } else {
+        quote! {}
+    };
+
+    (fields_tokens, needs_lifetime)
 }
 
 fn build_incoming_message_enums(
