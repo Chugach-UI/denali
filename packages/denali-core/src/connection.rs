@@ -2,7 +2,7 @@
 
 use crate::{
     message::{
-        Event, IncomingMessage, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request,
+        Event, IncomingMessage, MessageTypeMarker, OutgoingMessage, Request,
     },
     wire::serde::MessageHeader,
 };

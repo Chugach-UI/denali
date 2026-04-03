@@ -185,6 +185,17 @@ impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     }
 }
 
+impl<I: Interface> PartialEq<RawObjectId> for ObjectId<I> {
+    fn eq(&self, other: &RawObjectId) -> bool {
+        self.get() == *other
+    }
+}
+impl<I: Interface> PartialEq<ObjectId<I>> for RawObjectId {
+    fn eq(&self, other: &ObjectId<I>) -> bool {
+        *self == other.get()
+    }
+}
+
 impl<T: Interface> std::fmt::Debug for ObjectId<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple(&format!(

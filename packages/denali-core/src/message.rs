@@ -1,6 +1,6 @@
 //! Wayland message-related types and traits.
 
-use std::os::fd::{OwnedFd, RawFd};
+use std::os::fd::RawFd;
 
 use thiserror::Error;
 

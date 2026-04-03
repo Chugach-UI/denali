@@ -79,6 +79,16 @@ impl<T: num_traits::AsPrimitive<f64>> From<T> for Fixed {
     }
 }
 
+macro_rules! int_impls {
+    (@internal $type:ty) => {
+
+    };
+
+    ($($type:ty),*) => {
+
+    };
+}
+
 impl From<Fixed> for f32 {
     fn from(value: Fixed) -> Self {
         value.0 as f32 / 256.0
@@ -188,7 +198,7 @@ mod tests {
 
         assert_eq!(54_u8, fix.into());
         assert_eq!(54_u16, fix.into());
-        assert_eq!(54_u32, fix.into());
+        assert_eq!(54_u32, <Fixed as Into<u32>>::into(fix));
         assert_eq!(54_u64, fix.into());
         assert_eq!(54_u128, fix.into());
         assert_eq!(54_usize, fix.into());

@@ -49,12 +49,12 @@ async fn main() {
     loop {
         let head = conn.next_header().await.unwrap();
 
-        if head.object_id == sync_cb.get() {
+        if head.object_id == sync_cb {
             _ = conn.decode_message::<WlCallbackEvent>().await.unwrap();
             break;
         }
 
-        if head.object_id == registry.get() {
+        if head.object_id == registry {
             let event = conn.decode_message::<WlRegistryEvent>().await.unwrap();
 
             let WlRegistryEvent::Global {
@@ -181,10 +181,6 @@ async fn main() {
     .await
     .unwrap();
 
-    println!("Gamma set to {GAMMA} — press Ctrl+C to restore original gamma");
-
-    // Keep the connection alive. When this process exits, the gamma control
-    // object is destroyed and the compositor restores the original gamma.
     loop {
         let head = conn.next_header().await.unwrap();
 

@@ -52,12 +52,12 @@ async fn main() {
     loop {
         let head = conn.next_header().await.unwrap();
 
-        if head.object_id == sync_cb.get() {
+        if head.object_id == sync_cb {
             _ = conn.decode_message::<WlCallbackEvent>().await.unwrap();
             break;
         }
 
-        if head.object_id == registry.get() {
+        if head.object_id == registry {
             let event = conn.decode_message::<WlRegistryEvent>().await.unwrap();
 
             let WlRegistryEvent::Global {
@@ -139,7 +139,7 @@ async fn main() {
     while !configured {
         let head = conn.next_header().await.unwrap();
 
-        if head.object_id == xdg_surface.get() {
+        if head.object_id == xdg_surface {
             let event = conn.decode_message::<XdgSurfaceEvent>().await.unwrap();
             let XdgSurfaceEvent::Configure { serial } = event;
 
@@ -203,7 +203,7 @@ async fn main() {
     loop {
         let head = conn.next_header().await.unwrap();
 
-        if head.object_id == xdg_surface.get() {
+        if head.object_id == xdg_surface {
             let event = conn.decode_message::<XdgSurfaceEvent>().await.unwrap();
             let XdgSurfaceEvent::Configure { serial } = event;
 
