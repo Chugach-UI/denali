@@ -111,44 +111,58 @@ pub enum DynamicObjectIdError {
     /// Interface name does not match
     #[error("Interface name does not match")]
     InvalidInterface,
+    /// Version is newer than the maximum supported version of the interface
+    #[error("Interface version {0} is not supported")]
+    UnsupportedVersion(u32),
 }
 
 impl<'a, I: Interface> TryFrom<DynamicObjectId<'a>> for ObjectId<I> {
     type Error = DynamicObjectIdError;
 
     fn try_from(value: DynamicObjectId<'a>) -> Result<Self, Self::Error> {
-        if value.2 == I::INTERFACE && value.1 <= I::MAX_VERSION {
-            Ok(unsafe { ObjectId::from_raw(value.get()) })
-        } else {
-            Err(DynamicObjectIdError::InvalidInterface)
+        if value.2 != I::INTERFACE {
+            return Err(DynamicObjectIdError::InvalidInterface);
         }
+        if value.1 > I::MAX_VERSION {
+            return Err(DynamicObjectIdError::UnsupportedVersion(value.1));
+        }
+        Ok(unsafe { ObjectId::from_raw(value.get(), value.1) })
     }
 }
 
 /// An owned object ID with a compile-time-known interface.
 ///
-/// See [`DynamicObjectId`] for an owned object ID with a dynamic interface.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// The ID carries the version the object was created with. Objects created by a request
+/// inherit the version of the object the request was sent to, except for registry binds
+/// which use the requested version.
+///
+/// Equality and ordering only consider the ID, not the version.
+///
+/// See [`DynamicObjectId`] for an owned object ID with a dynamic interface,
+/// and [`ObjectRef`] for a non-owning reference to an object.
 pub struct ObjectId<I: Interface> {
     id: AnyObjectId,
+    version: u32,
     _interface: std::marker::PhantomData<I>,
 }
 
 impl<I: Interface> ObjectId<I> {
     /// Creates a new `ObjectId` from an `AnyObjectId`.
     #[must_use]
-    pub const unsafe fn new(id: AnyObjectId) -> Self {
+    pub const unsafe fn new(id: AnyObjectId, version: u32) -> Self {
         Self {
             id,
+            version,
             _interface: std::marker::PhantomData,
         }
     }
 
     /// Creates a new `ObjectId` from a `RawObjectId`.
     #[must_use]
-    pub const unsafe fn from_raw(id: RawObjectId) -> Self {
+    pub const unsafe fn from_raw(id: RawObjectId, version: u32) -> Self {
         Self {
             id: unsafe { AnyObjectId::new(id) },
+            version,
             _interface: std::marker::PhantomData,
         }
     }
@@ -157,6 +171,12 @@ impl<I: Interface> ObjectId<I> {
     #[must_use]
     pub const fn get(&self) -> RawObjectId {
         self.id.get()
+    }
+
+    /// Returns the version of the interface this object was created with.
+    #[must_use]
+    pub const fn version(&self) -> u32 {
+        self.version
     }
 
     /// Returns a reference to the underlying `ObjectId`.
@@ -185,6 +205,32 @@ impl<I: Interface> From<ObjectId<I>> for RawObjectId {
     }
 }
 
+impl<I: Interface> PartialEq for ObjectId<I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+impl<I: Interface> Eq for ObjectId<I> {}
+impl<I: Interface> PartialOrd for ObjectId<I> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl<I: Interface> Ord for ObjectId<I> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+impl<I: Interface> std::hash::Hash for ObjectId<I> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+impl<I: Interface> PartialEq<ObjectRef<I>> for ObjectId<I> {
+    fn eq(&self, other: &ObjectRef<I>) -> bool {
+        self.id == other.id
+    }
+}
 impl<I: Interface> PartialEq<RawObjectId> for ObjectId<I> {
     fn eq(&self, other: &RawObjectId) -> bool {
         self.get() == *other
@@ -200,6 +246,75 @@ impl<T: Interface> std::fmt::Debug for ObjectId<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple(&format!(
             "ObjectId<{}>",
+            std::any::type_name::<T>().rsplit("::").next().unwrap()
+        ))
+        .field(&self.id.get())
+        .field(&format_args!("v{}", self.version))
+        .finish()
+    }
+}
+
+/// A non-owning reference to an object with a compile-time-known interface.
+///
+/// This is what object arguments of incoming messages decode to. It is meant to be
+/// compared against the [`ObjectId`]s held by the receiver rather than used directly.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ObjectRef<I: Interface> {
+    id: AnyObjectId,
+    _interface: std::marker::PhantomData<I>,
+}
+
+impl<I: Interface> ObjectRef<I> {
+    /// Creates a new `ObjectRef` from a `RawObjectId`.
+    #[must_use]
+    pub const unsafe fn from_raw(id: RawObjectId) -> Self {
+        Self {
+            id: unsafe { AnyObjectId::new(id) },
+            _interface: std::marker::PhantomData,
+        }
+    }
+
+    /// Returns the underlying `RawObjectId` value of the `ObjectRef`.
+    #[must_use]
+    pub const fn get(&self) -> RawObjectId {
+        self.id.get()
+    }
+
+    /// Returns a reference to the underlying `ObjectId`.
+    #[must_use]
+    pub const fn as_object_id(&self) -> &AnyObjectId {
+        &self.id
+    }
+}
+impl<I: Interface> Clone for ObjectRef<I> {
+    fn clone(&self) -> Self {
+        Self {
+            id: AnyObjectId(self.id.0),
+            _interface: std::marker::PhantomData,
+        }
+    }
+}
+impl<I: Interface> PartialEq<ObjectId<I>> for ObjectRef<I> {
+    fn eq(&self, other: &ObjectId<I>) -> bool {
+        self.id == other.id
+    }
+}
+impl<I: Interface> Deref for ObjectRef<I> {
+    type Target = AnyObjectId;
+
+    fn deref(&self) -> &Self::Target {
+        &self.id
+    }
+}
+impl<I: Interface> From<ObjectRef<I>> for RawObjectId {
+    fn from(val: ObjectRef<I>) -> Self {
+        val.get()
+    }
+}
+impl<T: Interface> std::fmt::Debug for ObjectRef<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(&format!(
+            "ObjectRef<{}>",
             std::any::type_name::<T>().rsplit("::").next().unwrap()
         ))
         .field(&self.id.get())
@@ -268,7 +383,13 @@ impl IdManager {
     }
 
     /// Return a deleted ID to the pool of available IDs.
+    ///
+    /// IDs outside of the client range are ignored.
     pub fn recycle_id(&mut self, id: RawObjectId) {
+        if !(CLIENT_MIN_ID..=CLIENT_MAX_ID).contains(&id) || id >= self.next {
+            return;
+        }
+
         if id == self.next - 1 {
             self.next -= 1;
 
@@ -291,8 +412,12 @@ impl IdManager {
     }
 
     /// Allocate a new typed ID.
-    pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
-        self.alloc_id().map(|id| unsafe { ObjectId::from_raw(id) })
+    pub unsafe fn alloc_typed_id<I: Interface>(
+        &mut self,
+        version: u32,
+    ) -> Result<ObjectId<I>, IdManagerError> {
+        self.alloc_id()
+            .map(|id| unsafe { ObjectId::from_raw(id, version) })
     }
 }
 impl Default for IdManager {
@@ -329,8 +454,11 @@ impl<'a> IdFactory<'a> {
     }
 
     /// Allocate a new typed ID.
-    pub unsafe fn alloc_typed_id<I: Interface>(&mut self) -> Result<ObjectId<I>, IdManagerError> {
-        unsafe { self.0.alloc_typed_id() }
+    pub unsafe fn alloc_typed_id<I: Interface>(
+        &mut self,
+        version: u32,
+    ) -> Result<ObjectId<I>, IdManagerError> {
+        unsafe { self.0.alloc_typed_id(version) }
     }
 }
 

@@ -129,23 +129,26 @@ fn build_incoming_message_enums(
     } else {
         quote! { denali_core::message::Event }
     };
-    let message_type_enum = if message_type == MessageType::Request {
-        quote! { denali_core::message::MessageType::Request }
-    } else {
-        quote! { denali_core::message::MessageType::Event }
-    };
-
     let mut needs_lifetime = false;
     let variants = messages
         .iter()
         .map(|msg| {
             let event_name = build_ident(&msg.name, Case::Pascal);
+            let documentation = build_documentation(
+                Some(&msg.description),
+                None,
+                Some(msg.since),
+                msg.deprecated_since.as_ref(),
+            );
 
             let (fields, uses_lifetime) = build_message_fields(ctx, interface_map, msg, false);
 
             needs_lifetime |= uses_lifetime;
 
-            quote! { #event_name #fields }
+            quote! {
+                #documentation
+                #event_name #fields
+            }
         })
         .collect::<Vec<_>>();
 
@@ -203,19 +206,11 @@ fn build_incoming_message_enums(
             }
 
             fn try_decode(
-                interface: &str,
                 opcode: u16,
-                message_type: denali_core::message::MessageType,
+                version: u32,
                 data: &#data_lifetime [u8],
                 fds: &[std::os::fd::RawFd],
             ) -> Result<Self, denali_core::message::DecodeMessageError> {
-                if message_type != #message_type_enum {
-                    todo!()
-                }
-                if interface != Self::Interface::INTERFACE {
-                    return Err(denali_core::message::DecodeMessageError::UnknownInterface(interface.to_string()));
-                }
-
                 let mut reader = denali_core::wire::MessageDecoder::new(data);
 
                 match opcode {
@@ -256,6 +251,14 @@ fn build_outgoing_message_structs(
     let structs = messages.map(|msg| {
         let name = build_ident(&format!("{prefix}_{}{suffix}", msg.name), Case::Pascal);
         let opcode = msg.opcode as u16;
+        let since = msg.since;
+        let destructor = msg.message_type == MessageKind::Destructor;
+        let documentation = build_documentation(
+            Some(&msg.description),
+            None,
+            Some(msg.since),
+            msg.deprecated_since.as_ref(),
+        );
 
         let (fields, uses_lifetime) = build_message_fields(ctx, interface_map, msg, true);
 
@@ -292,20 +295,35 @@ fn build_outgoing_message_structs(
 
         let fd_count = msg.fd_args.len();
 
+        let new_object_version = msg.args.iter().find_map(|arg| {
+            (arg.arg_type == ArgType::GenericNewId).then(|| {
+                let arg_name = build_ident(&arg.name, Case::Snake);
+                quote! {
+                    fn new_object_version(&self) -> u32 {
+                        self.#arg_name.version()
+                    }
+                }
+            })
+        });
+
         quote! {
+            #documentation
             pub struct #name #bound_generics #fields
 
             impl #bound_generics OutgoingMessage<#message_type_marker> for #name #generics {
                 type Interface = #interface_name;
                 const OPCODE: u16 = #opcode;
+                const SINCE: u32 = #since;
+                const DESTRUCTOR: bool = #destructor;
                 const FD_COUNT: usize = #fd_count;
 
-                /// The type of response expected from this event/request.
                 type Response = #response;
 
                 fn sender(&self) -> &ObjectId<Self::Interface> {
                     &self.sender
                 }
+
+                #new_object_version
             }
 
             #encode_impl

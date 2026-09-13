@@ -85,15 +85,22 @@ loop {
         // handle xdg_surface events
     } else if let Some(event) = conn.try_recv_event(&head, &output).await? {
         // handle wl_output events
+    } else {
+        conn.skip_message().await?;
     }
 }
 ```
 
 ### Low-level
 
-You can also peek headers and decode manually:
+You can also peek headers and decode manually. Every peeked message must be consumed
+with either `decode_message` or `skip_message`:
 
 ```rust
 let head = conn.next_header().await?;
-let event = conn.decode_message::<XdgSurfaceEvent>().await?;
+if head.object_id == xdg_surface {
+    let event = conn.decode_message(&xdg_surface).await?;
+} else {
+    conn.skip_message().await?;
+}
 ```

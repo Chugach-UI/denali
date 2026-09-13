@@ -90,7 +90,10 @@ pub fn denali_macro_invocations(protocol_path: &str) -> String {
 }
 
 /// Generate the contents of a file exporting wayland protocol(s)
-pub fn denali_macro_invocations_with_deps(protocol_path: &str, maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str>)])]) -> String {
+pub fn denali_macro_invocations_with_deps(
+    protocol_path: &str,
+    maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str>)])],
+) -> String {
     let maps = external_interface_maps(maps);
     format!("denali_macro::wayland_protocols!(\"{protocol_path}\", {maps});")
 }

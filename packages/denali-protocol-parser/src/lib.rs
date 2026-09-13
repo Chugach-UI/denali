@@ -26,6 +26,14 @@ fn trim_text_lines(text: &str) -> String {
     text.trim().lines().map(|line| line.trim()).join("\n")
 }
 
+fn parse_since(since: Option<String>) -> u32 {
+    since.map_or(1, |since| {
+        since
+            .parse()
+            .unwrap_or_else(|_| panic!("Failed to parse since value '{since}'"))
+    })
+}
+
 fn transform_description(desc: Option<raw::Description>) -> Description {
     desc.map(|desc| Description {
         summary: trim_text_lines(&desc.summary),
@@ -82,6 +90,7 @@ fn transform_message(message: raw::Message, opcode: u32) -> Message {
         name: message.name,
         opcode,
         message_type,
+        since: parse_since(message.since),
         deprecated_since: message.deprecated_since,
         description: transform_description(message.description),
         args: message
@@ -145,6 +154,7 @@ fn transform_enum(enum_: raw::Enum) -> Enum {
     Enum {
         name: enum_.name,
         bitfield: enum_.bitfield.unwrap_or(false),
+        since: parse_since(enum_.since),
         variants: enum_
             .entries
             .into_iter()
@@ -169,6 +179,7 @@ fn transform_enum_variant(variant: raw::Entry) -> EnumVariant {
         name: variant.name,
         value,
         summary: variant.summary.unwrap_or_default(),
+        since: parse_since(variant.since),
         deprecated_since: variant.deprecated_since,
         description: transform_description(variant.description),
     }
@@ -218,6 +229,8 @@ pub struct Message {
     pub name: String,
     pub opcode: u32,
     pub message_type: MessageKind,
+    /// The interface version this message was introduced in
+    pub since: u32,
     pub deprecated_since: Option<String>,
     pub description: Description,
     pub args: Vec<Arg>,
@@ -286,6 +299,7 @@ pub enum EnumInnerType {
 pub struct Enum {
     pub name: String,
     pub bitfield: bool,
+    pub since: u32,
     pub variants: Vec<EnumVariant>,
 }
 impl Enum {
@@ -303,6 +317,7 @@ pub struct EnumVariant {
     pub name: String,
     pub value: i64, // i64 to fit cases of u32 max and negatives
     pub summary: String,
+    pub since: u32,
     pub deprecated_since: Option<String>,
     pub description: Description,
 }

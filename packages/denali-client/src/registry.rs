@@ -7,7 +7,6 @@ use denali_core::{
     message::NewIdHint,
 };
 use denali_protocol_base::wayland::{
-    wl_callback::WlCallbackEvent,
     wl_display::{WlDisplay, WlDisplayGetRegistryRequest, WlDisplaySyncRequest},
     wl_registry::{WlRegistry, WlRegistryBindRequest, WlRegistryEvent},
 };
@@ -51,12 +50,12 @@ impl Registry {
             let head = conn.next_header().await?;
 
             if head.object_id == sync_cb {
-                _ = conn.decode_message::<WlCallbackEvent>().await?;
+                _ = conn.decode_message(&sync_cb).await?;
                 break;
             }
 
             if head.object_id == registry {
-                let event = conn.decode_message::<WlRegistryEvent<'_>>().await?;
+                let event = conn.decode_message(&registry).await?;
 
                 if let WlRegistryEvent::Global {
                     name,
@@ -70,6 +69,8 @@ impl Registry {
                         version,
                     });
                 }
+            } else {
+                conn.skip_message().await?;
             }
         }
 
@@ -103,13 +104,11 @@ impl Registry {
             return Ok(None);
         };
 
-        let version = global.version.min(I::MAX_VERSION);
-
         let id = conn
             .send_request(WlRegistryBindRequest {
                 sender: &self.id,
                 name: global.name,
-                id: NewIdHint::<I>::new(version),
+                id: NewIdHint::<I>::new(global.version),
             })
             .await?;
 

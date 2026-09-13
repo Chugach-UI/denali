@@ -39,7 +39,7 @@ pub fn arg_type_to_rust_type(
 pub fn build_documentation(
     description: Option<&Description>,
     summary: Option<&String>,
-    since: Option<&String>,
+    since: Option<u32>,
     deprecated_since: Option<&String>,
 ) -> TokenStream {
     let description = description
@@ -59,6 +59,7 @@ pub fn build_documentation(
         .collect::<Vec<_>>()
         .join("\n");
     let since = since
+        .filter(|since| *since > 1)
         .map(|since| format!("Since: v{since}"))
         .unwrap_or_default();
 
@@ -71,7 +72,7 @@ pub fn build_documentation(
         quote! {}
     };
 
-    let doc_content = format!("{summary}\n{content}\n{since}");
+    let doc_content = format!("{summary}\n{content}\n\n{since}");
     let doc_content = doc_content.trim();
 
     quote! {
@@ -130,20 +131,21 @@ pub fn expand_argument_type(
         } => {
             let lifetime = lifetime.into_iter();
 
-            let reference = if outgoing {
-                lifetime_used = true;
-                quote! { & #(#lifetime)* }
-            } else {
-                quote! {}
-            };
-
-            let id_type = if let Some(interface) = interface {
-                let interface_path = interface_map.path_to_interface_type(interface);
-                quote! { #reference ObjectId<#interface_path> }
-            } else {
-                quote! {
-                    #reference AnyObjectId
+            let id_type = match (interface, outgoing) {
+                (Some(interface), true) => {
+                    lifetime_used = true;
+                    let interface_path = interface_map.path_to_interface_type(interface);
+                    quote! { & #(#lifetime)* ObjectId<#interface_path> }
                 }
+                (Some(interface), false) => {
+                    let interface_path = interface_map.path_to_interface_type(interface);
+                    quote! { ObjectRef<#interface_path> }
+                }
+                (None, true) => {
+                    lifetime_used = true;
+                    quote! { & #(#lifetime)* AnyObjectId }
+                }
+                (None, false) => quote! { AnyObjectId },
             };
 
             if *nullable {

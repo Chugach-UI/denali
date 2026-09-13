@@ -17,7 +17,7 @@ mod sealed {
 pub mod prelude {
     pub use crate::Interface;
     pub use crate::connection::Connection;
-    pub use crate::id::{AnyObjectId, ObjectId};
+    pub use crate::id::{AnyObjectId, ObjectId, ObjectRef};
     pub use crate::message::{IncomingMessage, OutgoingMessage};
 }
 
@@ -33,7 +33,7 @@ use std::os::fd::RawFd;
 #[doc(hidden)]
 pub use bitflags as __bitflags;
 
-use message::{DecodeMessageError, Event, IncomingMessage, MessageType, Request};
+use message::{DecodeMessageError, Event, IncomingMessage, Request};
 
 /// A Wayland interface.
 pub trait Interface {
@@ -53,19 +53,21 @@ pub trait InterfaceExt: Interface {
     /// Attempts to decode an incoming event message for this interface.
     fn try_decode_event<'a>(
         opcode: u16,
+        version: u32,
         data: &'a [u8],
         fds: &[RawFd],
     ) -> Result<Self::Event<'a>, DecodeMessageError> {
-        <Self::Event<'a>>::try_decode(Self::INTERFACE, opcode, MessageType::Event, data, fds)
+        <Self::Event<'a>>::try_decode(opcode, version, data, fds)
     }
 
     /// Attempts to decode an incoming request message for this interface.
     fn try_decode_request<'a>(
         opcode: u16,
+        version: u32,
         data: &'a [u8],
         fds: &[RawFd],
     ) -> Result<Self::Request<'a>, DecodeMessageError> {
-        <Self::Request<'a>>::try_decode(Self::INTERFACE, opcode, MessageType::Request, data, fds)
+        <Self::Request<'a>>::try_decode(opcode, version, data, fds)
     }
 }
 impl<I: Interface> InterfaceExt for I {}

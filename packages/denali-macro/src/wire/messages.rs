@@ -17,7 +17,7 @@ fn arg_to_serde_type(arg: &Arg) -> TokenStream {
         ArgType::GenericNewId => quote! {
             denali_core::wire::serde::DynamicallyTypedNewId {
                 interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                version: #arg_access.version,
+                version: #arg_access.version(),
                 id: 0
             }
         },
@@ -54,7 +54,6 @@ pub fn build_message_encode_impl(
         .map(arg_to_serde_type)
         .collect::<Vec<_>>();
 
-    //TODO: remove unwraps on client ID exhaustion (very low priority)
     let encode_conversions = message
         .args
         .iter()
@@ -63,18 +62,16 @@ pub fn build_message_encode_impl(
             match arg.arg_type.clone() {
                 ArgType::GenericNewId => {
                     quote! {
-                        unsafe {
-                            denali_core::wire::serde::DynamicallyTypedNewId {
-                                interface: denali_core::wire::serde::String::new(I::INTERFACE),
-                                version: self.#arg_name.version,
-                                id: id_factory.peek_next_id().unwrap()
-                            }
+                        denali_core::wire::serde::DynamicallyTypedNewId {
+                            interface: denali_core::wire::serde::String::new(I::INTERFACE),
+                            version: self.#arg_name.version(),
+                            id: id_factory.peek_next_id()?
                         }
                     }
                 }
                 ArgType::NewId { .. } => {
                     quote! {
-                        unsafe { id_factory.peek_next_id().unwrap() }
+                        id_factory.peek_next_id()?
                     }
                 }
                 _ => arg_to_serde_type(arg),
@@ -131,7 +128,7 @@ fn read_into_arg_var(arg: &Arg) -> TokenStream {
             interface,
         } => {
             let id = if interface.is_some() {
-                quote! { ObjectId::from_raw(raw) }
+                quote! { ObjectRef::from_raw(raw) }
             } else {
                 quote! { AnyObjectId::new(raw) }
             };
@@ -154,7 +151,7 @@ fn read_into_arg_var(arg: &Arg) -> TokenStream {
         }
         ArgType::NewId { .. } => quote! {
             let raw = reader.read()?;
-            let #arg_name = unsafe { ObjectId::from_raw(raw) };
+            let #arg_name = unsafe { ObjectId::from_raw(raw, version) };
         },
 
         ArgType::Enum { .. }

@@ -11,7 +11,7 @@ use crate::{
 #[allow(clippy::too_many_lines)]
 pub fn build_enum(enum_: &Enum) -> TokenStream {
     let name = format_ident!("{}", enum_.name.to_case(Case::Pascal));
-    let description = build_documentation(None, None, None, None);
+    let description = build_documentation(None, None, Some(enum_.since), None);
 
     let inner_type = enum_.inner_type();
 
@@ -59,8 +59,12 @@ pub fn build_enum(enum_: &Enum) -> TokenStream {
         .iter()
         .zip(variant_names.iter().zip(variant_values.iter()))
         .map(|(entry, (name, value))| {
-            let desc =
-                build_documentation(Some(&entry.description), Some(&entry.summary), None, None);
+            let desc = build_documentation(
+                Some(&entry.description),
+                Some(&entry.summary),
+                Some(entry.since),
+                entry.deprecated_since.as_ref(),
+            );
 
             if enum_.bitfield {
                 quote! {

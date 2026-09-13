@@ -2,14 +2,12 @@ use convert_case::Case;
 use proc_macro2::TokenStream;
 
 use crate::{
-    InterfaceMap, Protocol, build_ident, helpers::build_documentation, interface::build_interface_module
+    InterfaceMap, Protocol, build_ident, helpers::build_documentation,
+    interface::build_interface_module,
 };
 use quote::quote;
 
-pub fn build_protocol(
-    protocol: &Protocol,
-    interface_map: &InterfaceMap,
-) -> TokenStream {
+pub fn build_protocol(protocol: &Protocol, interface_map: &InterfaceMap) -> TokenStream {
     let mod_name = build_ident(&protocol.name, Case::Snake);
 
     let desc = build_documentation(Some(&protocol.description), None, None, None);

@@ -409,14 +409,11 @@ impl<'de> Decode<'de> for String<'de> {
         }
 
         let array_data = &data[4..size + 4];
-        assert!(
-            array_data.ends_with(&[0]),
-            "String data must end with a null terminator"
-        );
+        if !array_data.ends_with(&[0]) {
+            return Err(SerdeError::MissingNullTerminator);
+        }
 
-        let Ok(string_data) = std::str::from_utf8(&array_data[..size - 1]) else {
-            return Err(SerdeError::InvalidSize);
-        };
+        let string_data = std::str::from_utf8(&array_data[..size - 1])?;
 
         Ok(Self {
             data: string_data.into(),
@@ -469,4 +466,13 @@ pub enum SerdeError {
     /// An invalid enum value was encountered while encoding/decoding.
     #[error("Invalid enum value")]
     InvalidEnumValue,
+    /// A string was not null terminated.
+    #[error("String is not null terminated")]
+    MissingNullTerminator,
+    /// A string was not valid UTF-8.
+    #[error("String is not valid UTF-8")]
+    InvalidUtf8(#[from] std::str::Utf8Error),
+    /// A new ID could not be allocated while encoding.
+    #[error("Failed to allocate a new ID")]
+    IdAllocation(#[from] crate::id::IdManagerError),
 }

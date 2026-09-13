@@ -1,9 +1,10 @@
 //! Connection types and traits.
 
 use crate::{
-    Interface, id::ObjectId, message::{
-        Event, IncomingMessage, MessageTypeMarker, OutgoingMessage, Request,
-    }, wire::serde::MessageHeader
+    Interface,
+    id::ObjectId,
+    message::{Event, MessageTypeMarker, OutgoingMessage, Request},
+    wire::serde::MessageHeader,
 };
 
 /// Connection types.
@@ -59,15 +60,21 @@ pub trait Connection {
         message: O,
     ) -> Result<O::Response, Self::Error>;
 
-    /// Receive the next message from the remote endpoint.
+    /// Peek the header of the next message from the remote endpoint.
+    ///
+    /// The message must then be consumed with [`decode_message`](Self::decode_message)
+    /// or [`skip_message`](Self::skip_message).
     async fn next_header(&mut self) -> Result<MessageHeader, Self::Error>;
-    /// Decode the next message from the remote endpoint.
+    /// Decode the next message from the remote endpoint, which must be addressed to `receiver`.
     ///
     /// The returned message may borrow from the connection's internal buffer.
     /// The buffer is reclaimed on the next call to this method or [`next_header`](Self::next_header).
-    async fn decode_message<'a, M: IncomingMessage<'a, Self::IncomingMessageType>>(
+    async fn decode_message<'a, I: Interface>(
         &'a mut self,
-    ) -> Result<M, Self::Error>;
+        receiver: &ObjectId<I>,
+    ) -> Result<<Self::IncomingMessageType as MessageTypeMarker>::Message<'a, I>, Self::Error>;
+    /// Discard the next message from the remote endpoint.
+    async fn skip_message(&mut self) -> Result<(), Self::Error>;
 }
 
 /// Extension trait for client-sided connections.
@@ -88,22 +95,23 @@ pub trait ClientConnection: Connection<IncomingMessageType = Event> {
         &'a mut self,
         object: &ObjectId<I>,
     ) -> Result<I::Event<'a>, Self::Error> {
-        let id = object.get();
         loop {
             let head = self.next_header().await?;
-            if head.object_id == id {
-                return self.decode_message().await;
+            if head.object_id == object.get() {
+                return self.decode_message(object).await;
             }
+            self.skip_message().await?;
         }
     }
 
     /// Try to decode the current message as an event for `object`.
     ///
-    /// Call this after [`next_header`](denali_core::connection::Connection::next_header)
+    /// Call this after [`next_header`](Connection::next_header)
     /// to conditionally decode the peeked message. Returns `Some(event)` if the
     /// header's object ID matches, or `None` without consuming the message.
     ///
-    /// Chain multiple calls to dispatch events from different objects:
+    /// Chain multiple calls to dispatch events from different objects, and
+    /// [`skip_message`](Connection::skip_message) when none match:
     /// ```ignore
     /// loop {
     ///     let head = conn.next_header().await?;
@@ -111,6 +119,8 @@ pub trait ClientConnection: Connection<IncomingMessageType = Event> {
     ///         // handle xdg_surface events
     ///     } else if let Some(event) = conn.try_recv_event(&head, &output).await? {
     ///         // handle wl_output events
+    ///     } else {
+    ///         conn.skip_message().await?;
     ///     }
     /// }
     /// ```
@@ -120,7 +130,7 @@ pub trait ClientConnection: Connection<IncomingMessageType = Event> {
         object: &ObjectId<I>,
     ) -> Result<Option<I::Event<'a>>, Self::Error> {
         if header.object_id == object.get() {
-            let event = self.decode_message().await?;
+            let event = self.decode_message(object).await?;
             Ok(Some(event))
         } else {
             Ok(None)
@@ -154,12 +164,12 @@ pub trait ServerConnection: Connection<IncomingMessageType = Request> {
         &'a mut self,
         object: &ObjectId<I>,
     ) -> Result<I::Request<'a>, Self::Error> {
-        let id = object.get();
         loop {
             let head = self.next_header().await?;
-            if head.object_id == id {
-                return self.decode_message().await;
+            if head.object_id == object.get() {
+                return self.decode_message(object).await;
             }
+            self.skip_message().await?;
         }
     }
 
@@ -169,7 +179,8 @@ pub trait ServerConnection: Connection<IncomingMessageType = Request> {
     /// to conditionally decode the peeked message. Returns `Some(request)` if the
     /// header's object ID matches, or `None` without consuming the message.
     ///
-    /// Chain multiple calls to dispatch requests from different objects:
+    /// Chain multiple calls to dispatch requests from different objects, and
+    /// [`skip_message`](Connection::skip_message) when none match:
     /// ```ignore
     /// loop {
     ///     let head = conn.next_header().await?;
@@ -177,6 +188,8 @@ pub trait ServerConnection: Connection<IncomingMessageType = Request> {
     ///         // handle wl_surface requests
     ///     } else if let Some(req) = conn.try_recv_request(&head, &seat).await? {
     ///         // handle wl_seat requests
+    ///     } else {
+    ///         conn.skip_message().await?;
     ///     }
     /// }
     /// ```
@@ -186,7 +199,7 @@ pub trait ServerConnection: Connection<IncomingMessageType = Request> {
         object: &ObjectId<I>,
     ) -> Result<Option<I::Request<'a>>, Self::Error> {
         if header.object_id == object.get() {
-            let request = self.decode_message().await?;
+            let request = self.decode_message(object).await?;
             Ok(Some(request))
         } else {
             Ok(None)
