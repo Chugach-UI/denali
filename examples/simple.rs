@@ -2,7 +2,7 @@ use std::{io::Write, os::fd::OwnedFd};
 
 use denali_client::{
     connection::Connection,
-    core::connection::ClientConnection,
+    core::connection::{ClientConnection, Connection as _},
     protocol::{
         wayland::{
             wl_compositor::{WlCompositor, WlCompositorCreateSurfaceRequest},
@@ -14,6 +14,7 @@ use denali_client::{
             xdg_surface::{
                 XdgSurfaceAckConfigureRequest, XdgSurfaceEvent, XdgSurfaceGetToplevelRequest,
             },
+            xdg_toplevel::XdgToplevelEvent,
             xdg_wm_base::{XdgWmBase, XdgWmBaseGetXdgSurfaceRequest},
         },
     },
@@ -51,7 +52,7 @@ fn main() {
             })
             .await
             .unwrap();
-        let _xdg_toplevel = conn
+        let xdg_toplevel = conn
             .send_request(XdgSurfaceGetToplevelRequest {
                 sender: &xdg_surface,
             })
@@ -64,8 +65,7 @@ fn main() {
 
         println!("Waiting for surface configuration...");
 
-        let XdgSurfaceEvent::Configure { serial } =
-            conn.recv_event(&xdg_surface).await.unwrap();
+        let XdgSurfaceEvent::Configure { serial } = conn.recv_event(&xdg_surface).await.unwrap();
         conn.send_request(XdgSurfaceAckConfigureRequest {
             sender: &xdg_surface,
             serial,
@@ -121,19 +121,30 @@ fn main() {
             .unwrap();
 
         loop {
-            let XdgSurfaceEvent::Configure { serial } =
-                conn.recv_event(&xdg_surface).await.unwrap();
+            let head = conn.next_header().await.unwrap();
 
-            conn.send_request(XdgSurfaceAckConfigureRequest {
-                sender: &xdg_surface,
-                serial,
-            })
-            .await
-            .unwrap();
-
-            conn.send_request(WlSurfaceCommitRequest { sender: &surface })
+            if let Some(XdgSurfaceEvent::Configure { serial }) =
+                conn.try_recv_event(&head, &xdg_surface).await.unwrap()
+            {
+                conn.send_request(XdgSurfaceAckConfigureRequest {
+                    sender: &xdg_surface,
+                    serial,
+                })
                 .await
                 .unwrap();
+
+                conn.send_request(WlSurfaceCommitRequest { sender: &surface })
+                    .await
+                    .unwrap();
+            } else if let Some(event) = conn.try_recv_event(&head, &xdg_toplevel).await.unwrap() {
+                if matches!(event, XdgToplevelEvent::Close) {
+                    println!("Close requested by compositor, exiting.");
+                    break;
+                }
+                // Other toplevel events (configure, wm_capabilities, ...) are ignored here.
+            } else {
+                conn.skip_message().await.unwrap();
+            }
         }
     });
 }
