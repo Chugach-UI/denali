@@ -91,7 +91,7 @@ impl WaylandSocket {
                         msg.cmsgs()?.into_iter().for_each(|cmsg| {
                             if let ControlMessageOwned::ScmRights(received_fds) = cmsg {
                                 fds_received += received_fds.len();
-                                fd_queue.extend(received_fds.into_iter());
+                                fd_queue.extend(received_fds);
                             }
                         });
 

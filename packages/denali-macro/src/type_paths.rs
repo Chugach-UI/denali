@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use convert_case::Case;
 use proc_macro2::TokenStream;
@@ -87,9 +87,7 @@ impl InterfaceMap {
             return quote! { #ident };
         }
 
-        if enum_parts.len() > 2 {
-            panic!("Invalid enum path: {enum_name}");
-        }
+        assert!(enum_parts.len() <= 2, "Invalid enum path: {enum_name}");
 
         let interface_mod_path = self.interface_module_path(enum_parts[0]);
         let ident = build_ident(enum_parts[1], Case::Pascal);

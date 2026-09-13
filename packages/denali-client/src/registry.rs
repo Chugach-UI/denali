@@ -116,6 +116,7 @@ impl Registry {
     }
 
     /// The raw list of advertised globals.
+    #[must_use]
     pub fn globals(&self) -> &[Global] {
         &self.globals
     }

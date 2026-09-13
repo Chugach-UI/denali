@@ -69,6 +69,7 @@ pub trait IncomingMessage<'de, T: MessageTypeMarker>: Sized {
     type Interface: Interface;
 
     /// The number of file descriptors associated with this message.
+    #[must_use]
     fn fd_count(_opcode: u16) -> usize {
         0
     }

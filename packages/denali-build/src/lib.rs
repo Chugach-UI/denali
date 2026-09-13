@@ -2,7 +2,6 @@
 
 use std::{
     fs::{File, read_dir},
-    io::Read,
     path::Path,
 };
 
@@ -23,13 +22,14 @@ fn parse_info(info: &str) -> Vec<(&str, &str)> {
     info.trim_matches(['[', ']'])
         .rsplit('(')
         .take_while(|pair| pair.contains(')'))
-        .map(|pair| parse_pair(pair.trim().trim_end_matches(",")))
+        .map(|pair| parse_pair(pair.trim().trim_end_matches(',')))
         .collect()
 }
 
 /// Parses dependency info from a crate using build script metadata
 ///
 /// Dependency info is saved in the format [("<interface>", "<protocol>")]
+#[must_use]
 pub fn parse_dependency_info(crate_name: &str) -> Vec<(String, String)> {
     let key = crate_name.to_case(convert_case::Case::UpperSnake);
     let key = format!("DEP_{key}_DEPENDENCY_INFO");
@@ -41,6 +41,7 @@ pub fn parse_dependency_info(crate_name: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+#[must_use]
 pub fn generate_protocol_map(directory: &Path) -> Vec<(String, String)> {
     let mut map = Vec::new();
     for entry in read_dir(directory).unwrap() {
@@ -50,7 +51,7 @@ pub fn generate_protocol_map(directory: &Path) -> Vec<(String, String)> {
             .into_iter()
             .map(|interface| (interface.name, protocol.name.clone()));
 
-        map.extend(sub_map)
+        map.extend(sub_map);
     }
     map
 }
@@ -63,7 +64,7 @@ pub fn export_dependency_info(map: &[(impl AsRef<str>, impl AsRef<str>)]) {
 
     let info = format!("[{pairs}]");
 
-    println!("cargo:DEPENDENCY_INFO={info}")
+    println!("cargo:DEPENDENCY_INFO={info}");
 }
 
 fn external_interface_map(crate_name: &str, map: &[(impl AsRef<str>, impl AsRef<str>)]) -> String {
@@ -85,6 +86,7 @@ pub fn external_interface_maps(maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str
     format!("[{elems}]")
 }
 
+#[must_use]
 pub fn denali_macro_invocations(protocol_path: &str) -> String {
     format!("denali_macro::wayland_protocols!(\"{protocol_path}\", []);")
 }

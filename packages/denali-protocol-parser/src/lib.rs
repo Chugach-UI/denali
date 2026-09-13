@@ -23,7 +23,7 @@ pub fn parse_protocol(protocol: File) -> Result<Protocol, quick_xml::DeError> {
 }
 
 fn trim_text_lines(text: &str) -> String {
-    text.trim().lines().map(|line| line.trim()).join("\n")
+    text.trim().lines().map(str::trim).join("\n")
 }
 
 fn parse_since(since: Option<String>) -> u32 {
@@ -209,9 +209,11 @@ pub enum InterfaceElement {
     Enum(Enum),
 }
 impl InterfaceElement {
+    #[must_use]
     pub const fn is_request(&self) -> bool {
         matches!(self, InterfaceElement::Request(_))
     }
+    #[must_use]
     pub const fn is_event(&self) -> bool {
         matches!(self, InterfaceElement::Event(_))
     }
@@ -259,9 +261,11 @@ pub enum ArgType {
     String,
 }
 impl ArgType {
+    #[must_use]
     pub const fn is_nullable(&self) -> bool {
         matches!(self, ArgType::ObjectId { nullable: true, .. })
     }
+    #[must_use]
     pub const fn is_new_id(&self) -> bool {
         matches!(self, ArgType::NewId { .. } | ArgType::GenericNewId)
     }
@@ -303,6 +307,7 @@ pub struct Enum {
     pub variants: Vec<EnumVariant>,
 }
 impl Enum {
+    #[must_use]
     pub const fn inner_type(&self) -> EnumInnerType {
         if self.bitfield {
             EnumInnerType::U32
