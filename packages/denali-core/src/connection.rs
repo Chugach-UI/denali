@@ -1,9 +1,11 @@
 //! Connection types and traits.
 
+use std::os::fd::RawFd;
+
 use crate::{
     Interface,
     id::ObjectId,
-    message::{Event, MessageTypeMarker, OutgoingMessage, Request},
+    message::{Event, MessageTypeMarker, OutgoingMessage, RawWaylandMessage, Request},
     wire::serde::MessageHeader,
 };
 
@@ -65,6 +67,22 @@ pub trait Connection {
     /// The message must then be consumed with [`decode_message`](Self::decode_message)
     /// or [`skip_message`](Self::skip_message).
     async fn next_header(&mut self) -> Result<MessageHeader, Self::Error>;
+
+    /// Receive the next message from the remote endpoint without decoding it.
+    ///
+    /// The message body is copied out of the connection's internal buffer.
+    /// File descriptors cannot be associated with a message without knowing its
+    /// interface, so any sent alongside the message are left queued.
+    /// Claim them with [`next_fds`](Self::next_fds) before receiving another message.
+    async fn next_message_raw(&mut self) -> Result<RawWaylandMessage, Self::Error>;
+
+    /// Take the next `count` file descriptors received from the remote endpoint,
+    /// waiting for them to arrive if necessary.
+    ///
+    /// Use this after [`next_message_raw`](Self::next_message_raw) to claim the
+    /// file descriptors belonging to that message, so it can be decoded later once its type is known.
+    async fn next_fds(&mut self, count: usize) -> Result<Vec<RawFd>, Self::Error>;
+
     /// Decode the next message from the remote endpoint, which must be addressed to `receiver`.
     ///
     /// The returned message may borrow from the connection's internal buffer.

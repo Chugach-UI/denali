@@ -21,7 +21,9 @@ use denali_core::{
     Interface,
     connection::{ClientConnection, ConnectionType},
     id::{IdFactory, IdManager, IdManagerError, ObjectId},
-    message::{DecodeMessageError, Event, MessageResponse, Request, encode_message},
+    message::{
+        DecodeMessageError, Event, MessageResponse, RawWaylandMessage, Request, encode_message,
+    },
     prelude::IncomingMessage,
     wire::serde::{CompileTimeMessageSize, Decode, MessageHeader, RawObjectId, SerdeError},
 };
@@ -157,6 +159,27 @@ impl WaylandSocket {
         self.message_buffer.drain(..header.size as usize);
 
         Ok(())
+    }
+
+    pub async fn next_message_raw(&mut self) -> Result<RawWaylandMessage, ConnectionError> {
+        let header = self.peek_header().await?;
+        self.read_at_least(header.size as _, 0).await?;
+        let body = self
+            .message_buffer
+            .drain(..header.size as usize)
+            .skip(MessageHeader::SIZE)
+            .collect();
+
+        Ok(RawWaylandMessage {
+            object_id: header.object_id,
+            opcode: header.opcode,
+            body,
+        })
+    }
+
+    pub async fn next_fds(&mut self, count: usize) -> Result<Vec<RawFd>, ConnectionError> {
+        self.read_at_least(0, count).await?;
+        Ok(self.fd_queue.drain(..count).collect())
     }
 
     pub async fn next_message<'a, M: IncomingMessage<'a, Event>>(
@@ -370,6 +393,15 @@ impl denali_core::connection::Connection for Connection {
         }
 
         self.socket.next_message(receiver.version()).await
+    }
+
+    async fn next_message_raw(&mut self) -> Result<RawWaylandMessage, Self::Error> {
+        self.peek_header().await?;
+        self.socket.next_message_raw().await
+    }
+
+    async fn next_fds(&mut self, count: usize) -> Result<Vec<RawFd>, Self::Error> {
+        self.socket.next_fds(count).await
     }
 
     async fn skip_message(&mut self) -> Result<(), Self::Error> {
