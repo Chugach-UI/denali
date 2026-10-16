@@ -11,6 +11,16 @@ use tar::Archive;
 
 const WL_LOCKS: &str = include_str!("./wayland.lock");
 
+pub const DEPRECATED_PROTOCOLS: [&str; 7] = [
+    "linux-dmabuf-unstable-v1.xml",
+    "tablet-unstable-v1.xml",
+    "tablet-unstable-v2.xml",
+    "text-input-unstable-v1.xml",
+    "xdg-foreign-unstable-v1.xml",
+    "xdg-shell-unstable-v5.xml",
+    "xdg-shell-unstable-v6.xml",
+];
+
 pub fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -81,6 +91,7 @@ fn unpack_protocols_tar(client: &Client, protocols_path: &Path, archive_path: St
         if let Some(ext) = path.extension()
             && let Some(name) = path.file_name()
             && ext == "xml"
+            && !DEPRECATED_PROTOCOLS.contains(&name.to_str().unwrap())
         {
             entry.unpack(protocols_path.join(name)).unwrap();
         }
