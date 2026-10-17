@@ -17,8 +17,11 @@ use crate::connection::{Connection, ConnectionError};
 /// A collected global advertisement from the Wayland registry.
 #[derive(Debug, Clone)]
 pub struct Global {
+    /// The numeric identifier of the global.
     pub name: u32,
+    /// The Wayland interface that the global represents.
     pub interface: String,
+    /// The maximum version of the interface supported by the compositor.
     pub version: u32,
 }
 
@@ -80,6 +83,17 @@ impl Registry {
         })
     }
 
+    /// Check if an interface is supported.
+    ///
+    /// Returns `Some(version)` if the interface is supported, `None` if not,
+    /// where `version` is the maximum version supported by the compositor.
+    pub fn lookup<I: Interface>(&self) -> Option<u32> {
+        self.globals()
+            .iter()
+            .find(|g| g.interface == I::INTERFACE)
+            .map(|g| g.version)
+    }
+
     /// Bind a required global.
     ///
     /// Returns [`RegistryError::GlobalNotFound`] if the compositor does not
@@ -87,8 +101,9 @@ impl Registry {
     pub async fn bind<I: Interface>(
         &self,
         conn: &mut Connection,
+        version: u32,
     ) -> Result<ObjectId<I>, RegistryError> {
-        self.try_bind::<I>(conn)
+        self.try_bind::<I>(conn, version)
             .await?
             .ok_or(RegistryError::GlobalNotFound {
                 interface: I::INTERFACE,
@@ -99,16 +114,25 @@ impl Registry {
     pub async fn try_bind<I: Interface>(
         &self,
         conn: &mut Connection,
-    ) -> Result<Option<ObjectId<I>>, ConnectionError> {
+        version: u32,
+    ) -> Result<Option<ObjectId<I>>, RegistryError> {
         let Some(global) = self.globals.iter().find(|g| g.interface == I::INTERFACE) else {
             return Ok(None);
         };
+
+        if version > global.version {
+            return Err(RegistryError::UnsupportedVersion {
+                interface: I::INTERFACE,
+                requested: version,
+                available: global.version,
+            });
+        }
 
         let id = conn
             .send_request(WlRegistryBindRequest {
                 sender: &self.id,
                 name: global.name,
-                id: NewIdHint::<I>::new(global.version),
+                id: NewIdHint::<I>::new(version),
             })
             .await?;
 
@@ -127,7 +151,22 @@ impl Registry {
 pub enum RegistryError {
     /// The requested global is not advertised by the compositor.
     #[error("global `{interface}` is not available")]
-    GlobalNotFound { interface: &'static str },
+    GlobalNotFound {
+        /// The interface type of the global.
+        interface: &'static str,
+    },
+    /// The version requested for the global is not supported by the compositor.
+    #[error(
+        "`{interface}` is only supported up to version {available}, but version {requested} was requested"
+    )]
+    UnsupportedVersion {
+        /// The interface type of the global.
+        interface: &'static str,
+        /// The requested version.
+        requested: u32,
+        /// The maximum supported version.
+        available: u32,
+    },
     /// An underlying connection error.
     #[error(transparent)]
     Connection(#[from] ConnectionError),

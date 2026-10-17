@@ -1,3 +1,5 @@
+//! An example using wlr-gamma-control-unstable-v1 to control monitor brightness.
+
 use std::{
     io::{Seek, Write},
     os::fd::OwnedFd,
@@ -28,10 +30,10 @@ fn main() {
         let registry = Registry::new(&mut conn, &display).await.unwrap();
 
         let gamma_manager = registry
-            .bind::<ZwlrGammaControlManagerV1>(&mut conn)
+            .bind::<ZwlrGammaControlManagerV1>(&mut conn, 1)
             .await
             .unwrap();
-        let output = registry.bind::<WlOutput>(&mut conn).await.unwrap();
+        let output = registry.bind::<WlOutput>(&mut conn, 1).await.unwrap();
 
         // Drain wl_output info events (Geometry, Mode, Done, etc.)
         conn.roundtrip(&display).await.unwrap();

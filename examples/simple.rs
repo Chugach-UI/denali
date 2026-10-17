@@ -1,3 +1,7 @@
+//! A very simple example that displays an image of a cat.
+
+#![allow(tail_expr_drop_order)]
+
 use std::{io::Write, os::fd::OwnedFd};
 
 use denali_client::{
@@ -33,9 +37,9 @@ fn main() {
         let (mut conn, display) = Connection::new().await.unwrap();
         let registry = Registry::new(&mut conn, &display).await.unwrap();
 
-        let shm = registry.bind::<WlShm>(&mut conn).await.unwrap();
-        let compositor = registry.bind::<WlCompositor>(&mut conn).await.unwrap();
-        let xdg_wm_base = registry.bind::<XdgWmBase>(&mut conn).await.unwrap();
+        let shm = registry.bind::<WlShm>(&mut conn, 1).await.unwrap();
+        let compositor = registry.bind::<WlCompositor>(&mut conn, 4).await.unwrap();
+        let xdg_wm_base = registry.bind::<XdgWmBase>(&mut conn, 4).await.unwrap();
 
         println!("All globals bound!");
 
