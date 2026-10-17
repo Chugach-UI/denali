@@ -9,7 +9,6 @@ denali-protocol-base = { workspace = true }
 thiserror = { workspace = true }
 async-io = { workspace = true }
 futures-lite = { workspace = true }
-tracing = { workspace = true }
 nix = { workspace = true }
 
 [lints]

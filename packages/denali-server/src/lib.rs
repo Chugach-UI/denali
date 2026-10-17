@@ -1,3 +1,5 @@
+//! Utilities for creating Wayland servers.
+
 // pub mod display_socket;
 // mod socket;
 

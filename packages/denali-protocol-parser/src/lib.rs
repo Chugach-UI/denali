@@ -1,5 +1,7 @@
 //! Serde support for Wayland protocol files
 
+#![allow(missing_docs)]
+
 use std::fs::File;
 
 use itertools::Itertools;

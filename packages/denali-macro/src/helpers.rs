@@ -1,4 +1,3 @@
-
 use convert_case::{Boundary, Case, Casing};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
@@ -169,12 +168,4 @@ pub fn expand_argument_type(
     };
 
     (expanded, lifetime_used)
-}
-
-pub fn is_size_known_at_compile_time(args: &[&Arg]) -> bool {
-    args.iter().any(|arg| {
-        arg.arg_type == ArgType::String
-            || arg.arg_type == ArgType::Array
-            || (arg.arg_type == ArgType::GenericNewId)
-    })
 }

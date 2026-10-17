@@ -41,6 +41,7 @@ pub fn parse_dependency_info(crate_name: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Creates a map of protocols and their dependencies
 #[must_use]
 pub fn generate_protocol_map(directory: &Path) -> Vec<(String, String)> {
     let mut map = Vec::new();
@@ -56,6 +57,7 @@ pub fn generate_protocol_map(directory: &Path) -> Vec<(String, String)> {
     map
 }
 
+/// Forwards protocol dependency info to Cargo
 pub fn export_dependency_info(map: &[(impl AsRef<str>, impl AsRef<str>)]) {
     let pairs = map
         .iter()
@@ -86,12 +88,13 @@ pub fn external_interface_maps(maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str
     format!("[{elems}]")
 }
 
+/// Generate the contents of a filee exporting wayland protocol(s)
 #[must_use]
 pub fn denali_macro_invocations(protocol_path: &str) -> String {
     format!("denali_macro::wayland_protocols!(\"{protocol_path}\", []);")
 }
 
-/// Generate the contents of a file exporting wayland protocol(s)
+/// Generate the contents of a file exporting wayland protocol(s) that depend on other wayland protocols
 pub fn denali_macro_invocations_with_deps(
     protocol_path: &str,
     maps: &[(&str, &[(impl AsRef<str>, impl AsRef<str>)])],

@@ -31,7 +31,7 @@ struct InterfaceMapPair {
     protocol: LitStr,
 }
 impl Parse for InterfaceMapPair {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let content;
         syn::parenthesized!(content in input);
 
@@ -51,7 +51,7 @@ struct InterfaceMapInput {
     items: syn::punctuated::Punctuated<InterfaceMapPair, syn::Token![,]>,
 }
 impl Parse for InterfaceMapInput {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let content;
         syn::bracketed!(content in input);
 
@@ -66,7 +66,7 @@ struct InterfaceMapsInput {
     lists: syn::punctuated::Punctuated<InterfaceMapInput, syn::Token![,]>,
 }
 impl Parse for InterfaceMapsInput {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let content;
         syn::bracketed!(content in input);
 
@@ -81,7 +81,7 @@ struct ProtocolInput {
 }
 
 impl Parse for ProtocolInput {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let protocol_path: LitStr = input.parse()?;
         input.parse::<Token![,]>()?;
         let external_interface_maps: InterfaceMapsInput = input.parse()?;

@@ -79,16 +79,6 @@ impl<T: num_traits::AsPrimitive<f64>> From<T> for Fixed {
     }
 }
 
-macro_rules! int_impls {
-    (@internal $type:ty) => {
-
-    };
-
-    ($($type:ty),*) => {
-
-    };
-}
-
 impl From<Fixed> for f32 {
     fn from(value: Fixed) -> Self {
         value.0 as f32 / 256.0

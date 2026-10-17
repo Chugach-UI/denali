@@ -1,3 +1,5 @@
+//! Translates a Wayland protocol from xml to toml
+
 use std::fs::File;
 
 fn main() {
